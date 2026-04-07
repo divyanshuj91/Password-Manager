@@ -1,5 +1,12 @@
 """
-main.py — Smart Password Manager GUI (CustomTkinter).
+main.py — Smart Password Manager Desktop GUI (CustomTkinter).
+
+This is the DESKTOP interface. For the WEB interface, run ``server.py``.
+
+Both interfaces share the same modular core:
+  • encryption.py — Argon2 hashing + Fernet encryption
+  • database.py   — SQLAlchemy ORM (SQLite / PostgreSQL-ready)
+  • totp.py       — TOTP 2FA code generation
 
 Screens
 -------

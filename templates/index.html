@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Password Manager</title>
+    <meta name="description" content="Zero-knowledge encrypted password vault with TOTP authenticator">
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+    <script>
+        tailwindcss.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        vault: {
+                            950: '#06080f',
+                            900: '#0a0e1a',
+                            800: '#111827',
+                            700: '#1a1f36',
+                            600: '#252b48',
+                            500: '#2d3561',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', system-ui, sans-serif; background: #06080f; color: #f1f5f9; }
+
+        /* ── Animated gradient background ── */
+        .bg-mesh {
+            background:
+                radial-gradient(ellipse at 20% 50%, rgba(99,102,241,0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(139,92,246,0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, rgba(14,165,233,0.05) 0%, transparent 50%),
+                #06080f;
+            min-height: 100vh;
+        }
+
+        /* ── Glassmorphism card ── */
+        .glass {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+
+        .glass-light {
+            background: rgba(26, 31, 54, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        /* ── Card hover ── */
+        .card-hover {
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px rgba(99,102,241,0.12);
+            border-color: rgba(99,102,241,0.2);
+        }
+
+        /* ── TOTP circular countdown ── */
+        .totp-ring {
+            transform: rotate(-90deg);
+        }
+        .totp-ring-bg { stroke: rgba(255,255,255,0.06); }
+        .totp-ring-fg {
+            stroke: #6366f1;
+            transition: stroke-dashoffset 1s linear, stroke 0.3s ease;
+        }
+        .totp-ring-fg.warning { stroke: #f59e0b; }
+        .totp-ring-fg.danger { stroke: #ef4444; }
+
+        /* ── Strength meter ── */
+        .strength-bar {
+            height: 4px;
+            border-radius: 9999px;
+            transition: width 0.4s ease, background 0.4s ease;
+        }
+
+        /* ── Fade-in animation ── */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in { animation: fadeIn 0.4s ease forwards; }
+
+        @keyframes slideInRight {
+            from { opacity: 0; transform: translateX(100%); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        .slide-in-right { animation: slideInRight 0.35s ease forwards; }
+
+        @keyframes slideOutRight {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(100%); }
+        }
+        .slide-out-right { animation: slideOutRight 0.3s ease forwards; }
+
+        /* ── Modal backdrop ── */
+        .modal-backdrop {
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(4px);
+        }
+
+        /* ── Custom scrollbar ── */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,0.5); }
+
+        /* ── Input focus ring ── */
+        input:focus { outline: none; box-shadow: 0 0 0 2px rgba(99,102,241,0.4); }
+
+        /* ── Button press effect ── */
+        button:active:not(:disabled) { transform: scale(0.97); }
+
+        /* hidden utility */
+        .hidden { display: none !important; }
+
+        /* ── Glow text for TOTP code ── */
+        .totp-code {
+            text-shadow: 0 0 20px rgba(99,102,241,0.4);
+        }
+
+        /* ── Entry stagger animation ── */
+        .entry-card { opacity: 0; animation: fadeIn 0.4s ease forwards; }
+    </style>
+</head>
+<body class="bg-mesh">
+
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <!-- TOAST CONTAINER -->
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-3 pointer-events-none"></div>
+
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <!-- SCREEN: SIGNUP -->
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <div id="screen-signup" class="hidden min-h-screen flex items-center justify-center p-4">
+        <div class="glass rounded-2xl p-8 w-full max-w-md fade-in">
+            <div class="text-center mb-8">
+                <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-500/20">
+                    <i data-lucide="shield-plus" class="w-8 h-8 text-white"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-white">Create Your Vault</h1>
+                <p class="text-slate-400 text-sm mt-2">Set a master password to protect your entire vault.</p>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5 block">Master Password</label>
+                    <div class="relative">
+                        <input id="signup-pw" type="password" placeholder="Min. 6 characters"
+                               class="w-full px-4 py-3 rounded-xl bg-vault-700 border border-white/5 text-white placeholder-slate-500 text-sm"
+                               oninput="updateStrength(this.value)">
+                        <button onclick="toggleVis('signup-pw', 'signup-eye')" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition">
+                            <i id="signup-eye" data-lucide="eye-off" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    <!-- Strength meter -->
+                    <div class="mt-2 h-1 bg-vault-600 rounded-full overflow-hidden">
+                        <div id="strength-bar" class="strength-bar bg-red-500" style="width: 0%"></div>
+                    </div>
+                    <p id="strength-text" class="text-xs text-slate-500 mt-1">Enter a password</p>
+                </div>
+                <div>
+                    <label class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5 block">Confirm Password</label>
+                    <input id="signup-confirm" type="password" placeholder="Re-enter your password"
+                           class="w-full px-4 py-3 rounded-xl bg-vault-700 border border-white/5 text-white placeholder-slate-500 text-sm">
+                </div>
+
+                <button id="btn-signup" onclick="doSignup()"
+                        class="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 text-white font-semibold text-sm
+                               hover:from-indigo-400 hover:to-violet-500 transition-all duration-200 shadow-lg shadow-indigo-500/20 mt-2">
+                    <span class="flex items-center justify-center gap-2">
+                        <i data-lucide="lock" class="w-4 h-4"></i> Create Vault
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <!-- SCREEN: LOGIN -->
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <div id="screen-login" class="hidden min-h-screen flex items-center justify-center p-4">
+        <div class="glass rounded-2xl p-8 w-full max-w-md fade-in">
+            <div class="text-center mb-8">
+                <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-500/20">
+                    <i data-lucide="lock-keyhole" class="w-8 h-8 text-white"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-white">Unlock Your Vault</h1>
+                <p class="text-slate-400 text-sm mt-2">Enter your master password to continue.</p>
+            </div>
+
+            <div class="space-y-4">
+                <div class="relative">
+                    <input id="login-pw" type="password" placeholder="Master Password"
+                           class="w-full px-4 py-3 rounded-xl bg-vault-700 border border-white/5 text-white placeholder-slate-500 text-sm"
+                           onkeydown="if(event.key==='Enter') doLogin()">
+                    <button onclick="toggleVis('login-pw', 'login-eye')" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition">
+                        <i id="login-eye" data-lucide="eye-off" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                <p id="login-error" class="text-rose-400 text-xs hidden"></p>
+
+                <button id="btn-login" onclick="doLogin()"
+                        class="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 text-white font-semibold text-sm
+                               hover:from-indigo-400 hover:to-violet-500 transition-all duration-200 shadow-lg shadow-indigo-500/20">
+                    <span class="flex items-center justify-center gap-2">
+                        <i data-lucide="unlock" class="w-4 h-4"></i> Unlock
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <!-- SCREEN: DASHBOARD -->
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <div id="screen-dashboard" class="hidden min-h-screen flex flex-col">
+
+        <!-- ── Top bar ── -->
+        <header class="glass sticky top-0 z-40 border-b border-white/5">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+                <!-- Logo -->
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                        <i data-lucide="shield-check" class="w-5 h-5 text-white"></i>
+                    </div>
+                    <h1 class="text-lg font-bold text-white hidden sm:block">Vault</h1>
+                </div>
+
+                <!-- Search -->
+                <div class="relative flex-1 max-w-md mx-4">
+                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                    <input id="search-input" type="text" placeholder="Search vault..."
+                           class="w-full pl-10 pr-4 py-2 rounded-xl bg-vault-700 border border-white/5 text-sm text-white placeholder-slate-500"
+                           oninput="filterEntries(this.value)">
+                </div>
+
+                <!-- Actions -->
+                <div class="flex items-center gap-2">
+                    <button onclick="openAddModal()"
+                            class="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600
+                                   text-white text-sm font-medium hover:from-indigo-400 hover:to-violet-500 transition-all shadow-lg shadow-indigo-500/20">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                        <span class="hidden sm:inline">Add New</span>
+                    </button>
+                    <button onclick="doLogout()"
+                            class="flex items-center gap-2 px-3 py-2 rounded-xl bg-vault-700 border border-white/5
+                                   text-slate-300 text-sm hover:bg-vault-600 hover:text-white transition-all">
+                        <i data-lucide="log-out" class="w-4 h-4"></i>
+                        <span class="hidden sm:inline">Lock</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- ── Main content ── -->
+        <main class="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6">
+            <!-- Stats bar -->
+            <div id="stats-bar" class="flex items-center gap-4 mb-6 text-sm text-slate-400">
+                <span class="flex items-center gap-1.5">
+                    <i data-lucide="key-round" class="w-4 h-4 text-indigo-400"></i>
+                    <span id="stat-count">0</span> passwords
+                </span>
+                <span class="flex items-center gap-1.5">
+                    <i data-lucide="timer" class="w-4 h-4 text-violet-400"></i>
+                    <span id="stat-totp">0</span> with 2FA
+                </span>
+            </div>
+
+            <!-- Empty state -->
+            <div id="empty-state" class="hidden flex flex-col items-center justify-center py-24 text-center">
+                <div class="w-20 h-20 rounded-2xl bg-vault-700 flex items-center justify-center mb-6">
+                    <i data-lucide="vault" class="w-10 h-10 text-slate-500"></i>
+                </div>
+                <h2 class="text-xl font-semibold text-slate-300 mb-2">Your vault is empty</h2>
+                <p class="text-slate-500 text-sm mb-6">Add your first credential to get started.</p>
+                <button onclick="openAddModal()"
+                        class="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600
+                               text-white text-sm font-medium hover:from-indigo-400 hover:to-violet-500 transition-all shadow-lg shadow-indigo-500/20">
+                    <i data-lucide="plus" class="w-4 h-4"></i> Add First Entry
+                </button>
+            </div>
+
+            <!-- Entries grid -->
+            <div id="entries-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+        </main>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <!-- MODAL: ADD / EDIT ENTRY -->
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <div id="modal-add" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop">
+        <div class="glass rounded-2xl p-6 w-full max-w-lg fade-in" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i data-lucide="plus-circle" class="w-5 h-5 text-indigo-400"></i>
+                    Add New Entry
+                </h2>
+                <button onclick="closeAddModal()" class="text-slate-400 hover:text-white transition">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5 block">Website / App</label>
+                    <div class="relative">
+                        <i data-lucide="globe" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                        <input id="add-website" type="text" placeholder="e.g. github.com"
+                               class="w-full pl-10 pr-4 py-3 rounded-xl bg-vault-700 border border-white/5 text-white placeholder-slate-500 text-sm">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5 block">Username / Email</label>
+                    <div class="relative">
+                        <i data-lucide="user" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                        <input id="add-username" type="text" placeholder="e.g. john@example.com"
+                               class="w-full pl-10 pr-4 py-3 rounded-xl bg-vault-700 border border-white/5 text-white placeholder-slate-500 text-sm">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5 block">Password</label>
+                    <div class="relative">
+                        <i data-lucide="key-round" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                        <input id="add-password" type="text" placeholder="Enter or generate"
+                               class="w-full pl-10 pr-24 py-3 rounded-xl bg-vault-700 border border-white/5 text-white placeholder-slate-500 text-sm font-mono">
+                        <button onclick="generatePassword()"
+                                class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2.5 py-1.5 rounded-lg
+                                       bg-indigo-500/20 text-indigo-300 text-xs font-medium hover:bg-indigo-500/30 transition">
+                            <i data-lucide="zap" class="w-3 h-3"></i> Generate
+                        </button>
+                    </div>
+                </div>
+
+                <!-- TOTP Section -->
+                <div class="border-t border-white/5 pt-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <label class="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <i data-lucide="timer" class="w-3.5 h-3.5 text-violet-400"></i>
+                            TOTP Secret (Optional)
+                        </label>
+                        <button onclick="generateTotpSecret()"
+                                class="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-500/20 text-violet-300 text-xs font-medium hover:bg-violet-500/30 transition">
+                            <i data-lucide="refresh-cw" class="w-3 h-3"></i> Auto-Generate
+                        </button>
+                    </div>
+                    <input id="add-totp" type="text" placeholder="Base32 secret (leave empty to skip)"
+                           class="w-full px-4 py-3 rounded-xl bg-vault-700 border border-white/5 text-white placeholder-slate-500 text-sm font-mono">
+                    <p class="text-xs text-slate-500 mt-1.5">Add a TOTP secret to enable 2FA code generation for this account.</p>
+                </div>
+
+                <button onclick="doAddEntry()"
+                        class="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 text-white font-semibold text-sm
+                               hover:from-indigo-400 hover:to-violet-500 transition-all duration-200 shadow-lg shadow-indigo-500/20 mt-2">
+                    <span class="flex items-center justify-center gap-2">
+                        <i data-lucide="save" class="w-4 h-4"></i> Save Entry
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <!-- MODAL: QR CODE -->
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <div id="modal-qr" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop" onclick="closeQrModal()">
+        <div class="glass rounded-2xl p-6 w-full max-w-sm fade-in text-center" onclick="event.stopPropagation()">
+            <h2 class="text-lg font-bold text-white mb-2">Scan QR Code</h2>
+            <p id="qr-subtitle" class="text-slate-400 text-sm mb-4"></p>
+            <div class="flex justify-center mb-4">
+                <img id="qr-image" class="rounded-xl" width="200" height="200" alt="TOTP QR Code">
+            </div>
+            <p class="text-xs text-slate-500 mb-4">Scan with Google Authenticator, Authy, or any TOTP app.</p>
+            <button onclick="closeQrModal()"
+                    class="px-6 py-2 rounded-xl bg-vault-600 text-white text-sm hover:bg-vault-500 transition">
+                Close
+            </button>
+        </div>
+    </div>
+
+
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <!-- JAVASCRIPT -->
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <script>
+    // ── State ───────────────────────────────────────────────────────────────
+    let token = localStorage.getItem('vault_token');
+    let entriesCache = [];
+    let totpIntervals = {};
+    let clipboardTimeout = null;
+
+    // ── API helper ──────────────────────────────────────────────────────────
+    async function api(method, path, body = null) {
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const opts = { method, headers };
+        if (body) opts.body = JSON.stringify(body);
+        const res = await fetch(path, opts);
+        const data = await res.json();
+        if (res.status === 401) {
+            token = null;
+            localStorage.removeItem('vault_token');
+            showScreen('login');
+            throw new Error('Session expired');
+        }
+        if (!res.ok) throw new Error(data.detail || 'Request failed');
+        return data;
+    }
+
+    // ── Screen management ───────────────────────────────────────────────────
+    function showScreen(name) {
+        document.querySelectorAll('[id^="screen-"]').forEach(s => s.classList.add('hidden'));
+        const el = document.getElementById(`screen-${name}`);
+        if (el) el.classList.remove('hidden');
+        lucide.createIcons();
+    }
+
+    // ── Toast notifications ─────────────────────────────────────────────────
+    function toast(message, type = 'success') {
+        const container = document.getElementById('toast-container');
+        const colors = {
+            success: 'from-emerald-500/20 to-emerald-500/5 border-emerald-500/30 text-emerald-300',
+            error: 'from-rose-500/20 to-rose-500/5 border-rose-500/30 text-rose-300',
+            info: 'from-indigo-500/20 to-indigo-500/5 border-indigo-500/30 text-indigo-300',
+        };
+        const icons = { success: 'check-circle-2', error: 'alert-circle', info: 'info' };
+
+        const el = document.createElement('div');
+        el.className = `pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r ${colors[type]}
+                         border backdrop-blur-lg slide-in-right text-sm font-medium shadow-xl min-w-[280px]`;
+        el.innerHTML = `<i data-lucide="${icons[type]}" class="w-5 h-5 shrink-0"></i><span>${message}</span>`;
+        container.appendChild(el);
+        lucide.createIcons({ target: el });
+
+        setTimeout(() => {
+            el.classList.remove('slide-in-right');
+            el.classList.add('slide-out-right');
+            setTimeout(() => el.remove(), 300);
+        }, 3000);
+    }
+
+    // ── Eye toggle ──────────────────────────────────────────────────────────
+    function toggleVis(inputId, iconId) {
+        const inp = document.getElementById(inputId);
+        const wrapper = document.getElementById(iconId);
+        if (inp.type === 'password') {
+            inp.type = 'text';
+            wrapper.setAttribute('data-lucide', 'eye');
+        } else {
+            inp.type = 'password';
+            wrapper.setAttribute('data-lucide', 'eye-off');
+        }
+        lucide.createIcons();
+    }
+
+    // ── Password strength meter ─────────────────────────────────────────────
+    function updateStrength(pw) {
+        const bar = document.getElementById('strength-bar');
+        const txt = document.getElementById('strength-text');
+        if (!pw) { bar.style.width = '0%'; txt.textContent = 'Enter a password'; return; }
+
+        let score = 0;
+        if (pw.length >= 6) score++;
+        if (pw.length >= 10) score++;
+        if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
+        if (/\d/.test(pw)) score++;
+        if (/[^a-zA-Z0-9]/.test(pw)) score++;
+
+        const levels = [
+            { w: '10%', c: '#ef4444', t: 'Very weak' },
+            { w: '25%', c: '#f97316', t: 'Weak' },
+            { w: '50%', c: '#f59e0b', t: 'Fair' },
+            { w: '75%', c: '#22c55e', t: 'Strong' },
+            { w: '100%',c: '#10b981', t: 'Very strong' },
+        ];
+        const lvl = levels[Math.min(score, 4)];
+        bar.style.width = lvl.w;
+        bar.style.background = lvl.c;
+        txt.textContent = lvl.t;
+        txt.style.color = lvl.c;
+    }
+
+    // ── Signup ───────────────────────────────────────────────────────────────
+    async function doSignup() {
+        const pw = document.getElementById('signup-pw').value.trim();
+        const cf = document.getElementById('signup-confirm').value.trim();
+        if (!pw) return toast('Password cannot be empty', 'error');
+        if (pw.length < 6) return toast('Password must be at least 6 characters', 'error');
+        if (pw !== cf) return toast('Passwords do not match', 'error');
+
+        try {
+            const data = await api('POST', '/api/register', { master_password: pw });
+            token = data.token;
+            localStorage.setItem('vault_token', token);
+            toast('Vault created successfully!', 'success');
+            showScreen('dashboard');
+            loadEntries();
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    // ── Login ────────────────────────────────────────────────────────────────
+    async function doLogin() {
+        const pw = document.getElementById('login-pw').value.trim();
+        if (!pw) return toast('Enter your master password', 'error');
+
+        try {
+            const data = await api('POST', '/api/login', { master_password: pw });
+            token = data.token;
+            localStorage.setItem('vault_token', token);
+            document.getElementById('login-error').classList.add('hidden');
+            toast('Vault unlocked!', 'success');
+            showScreen('dashboard');
+            loadEntries();
+        } catch (e) {
+            const errEl = document.getElementById('login-error');
+            errEl.textContent = e.message;
+            errEl.classList.remove('hidden');
+            document.getElementById('login-pw').value = '';
+        }
+    }
+
+    // ── Logout ───────────────────────────────────────────────────────────────
+    async function doLogout() {
+        try { await api('POST', '/api/logout'); } catch {}
+        token = null;
+        localStorage.removeItem('vault_token');
+        Object.values(totpIntervals).forEach(clearInterval);
+        totpIntervals = {};
+        showScreen('login');
+        toast('Vault locked', 'info');
+    }
+
+    // ── Load entries ─────────────────────────────────────────────────────────
+    async function loadEntries() {
+        try {
+            const data = await api('GET', '/api/entries');
+            entriesCache = data.entries;
+            renderEntries(entriesCache);
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    // ── Filter entries ───────────────────────────────────────────────────────
+    function filterEntries(query) {
+        const q = query.toLowerCase();
+        const filtered = entriesCache.filter(e =>
+            e.website.toLowerCase().includes(q) || e.username.toLowerCase().includes(q)
+        );
+        renderEntries(filtered);
+    }
+
+    // ── Render entries ───────────────────────────────────────────────────────
+    function renderEntries(entries) {
+        const grid = document.getElementById('entries-grid');
+        const empty = document.getElementById('empty-state');
+
+        // Clear TOTP intervals
+        Object.values(totpIntervals).forEach(clearInterval);
+        totpIntervals = {};
+
+        // Stats
+        document.getElementById('stat-count').textContent = entries.length;
+        document.getElementById('stat-totp').textContent = entries.filter(e => e.has_totp).length;
+
+        if (!entries.length) {
+            grid.innerHTML = '';
+            empty.classList.remove('hidden');
+            return;
+        }
+
+        empty.classList.add('hidden');
+        grid.innerHTML = entries.map((entry, i) => {
+            const initial = entry.website.charAt(0).toUpperCase();
+            const hue = (entry.website.charCodeAt(0) * 37) % 360;
+            return `
+            <div class="entry-card glass-light rounded-2xl p-5 card-hover" style="animation-delay: ${i * 0.06}s" data-id="${entry.id}">
+                <!-- Header -->
+                <div class="flex items-start justify-between mb-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-lg"
+                             style="background: linear-gradient(135deg, hsl(${hue},70%,55%), hsl(${hue+30},60%,45%))">
+                            ${initial}
+                        </div>
+                        <div>
+                            <h3 class="text-white font-semibold text-sm">${escapeHtml(entry.website)}</h3>
+                            <p class="text-slate-400 text-xs">${escapeHtml(entry.username)}</p>
+                        </div>
+                    </div>
+                    <button onclick="deleteEntry(${entry.id}, '${escapeHtml(entry.website)}')"
+                            class="text-slate-500 hover:text-rose-400 transition p-1 rounded-lg hover:bg-rose-500/10">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Password row -->
+                <div class="flex items-center gap-2 mb-3">
+                    <div class="flex-1 px-3 py-2 rounded-lg bg-vault-900/60 font-mono text-sm">
+                        <span id="pw-display-${entry.id}" class="text-slate-400">••••••••••••</span>
+                    </div>
+                    <button onclick="togglePassword(${entry.id})" title="Show/Hide"
+                            class="p-2 rounded-lg bg-vault-900/60 text-slate-400 hover:text-indigo-300 hover:bg-indigo-500/10 transition">
+                        <i id="pw-icon-${entry.id}" data-lucide="eye" class="w-4 h-4"></i>
+                    </button>
+                    <button onclick="copyPassword(${entry.id})" title="Copy (auto-clears in 30s)"
+                            class="p-2 rounded-lg bg-vault-900/60 text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition">
+                        <i data-lucide="copy" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- TOTP section -->
+                ${entry.has_totp ? `
+                <div class="border-t border-white/5 pt-3 mt-1">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <!-- Circular countdown -->
+                            <div class="relative w-10 h-10">
+                                <svg class="totp-ring w-10 h-10" viewBox="0 0 36 36">
+                                    <circle class="totp-ring-bg" cx="18" cy="18" r="15" fill="none" stroke-width="2.5"/>
+                                    <circle id="totp-circle-${entry.id}" class="totp-ring-fg" cx="18" cy="18" r="15"
+                                            fill="none" stroke-width="2.5" stroke-linecap="round"
+                                            stroke-dasharray="94.25" stroke-dashoffset="0"/>
+                                </svg>
+                                <span id="totp-time-${entry.id}" class="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-slate-300">30</span>
+                            </div>
+                            <span id="totp-code-${entry.id}" class="totp-code font-mono text-2xl font-bold text-indigo-300 tracking-widest">------</span>
+                        </div>
+                        <button onclick="showQr(${entry.id})" title="Show QR Code"
+                                class="p-2 rounded-lg text-slate-400 hover:text-violet-300 hover:bg-violet-500/10 transition">
+                            <i data-lucide="qr-code" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>` : `
+                <div class="border-t border-white/5 pt-3 mt-1">
+                    <button onclick="promptAddTotp(${entry.id})"
+                            class="flex items-center gap-1.5 text-xs text-slate-500 hover:text-violet-300 transition">
+                        <i data-lucide="plus" class="w-3 h-3"></i> Add 2FA
+                    </button>
+                </div>`}
+            </div>`;
+        }).join('');
+
+        lucide.createIcons();
+
+        // Start TOTP countdowns
+        entries.filter(e => e.has_totp).forEach(e => startTotp(e.id));
+    }
+
+    // ── TOTP countdown ───────────────────────────────────────────────────────
+    async function startTotp(entryId) {
+        const circumference = 94.25; // 2 * π * 15
+        const circle = document.getElementById(`totp-circle-${entryId}`);
+        const timeEl = document.getElementById(`totp-time-${entryId}`);
+        const codeEl = document.getElementById(`totp-code-${entryId}`);
+        if (!circle || !timeEl || !codeEl) return;
+
+        async function fetchCode() {
+            try {
+                const data = await api('GET', `/api/entries/${entryId}/totp`);
+                codeEl.textContent = data.code.replace(/(.{3})/, '$1 ');
+                return data.remaining;
+            } catch { codeEl.textContent = '------'; return 30; }
+        }
+
+        let remaining = await fetchCode();
+
+        function tick() {
+            remaining = 30 - (Math.floor(Date.now() / 1000) % 30);
+            const offset = circumference * (1 - remaining / 30);
+            circle.style.strokeDashoffset = offset;
+            timeEl.textContent = remaining;
+
+            // Color coding
+            circle.classList.remove('warning', 'danger');
+            if (remaining <= 5) circle.classList.add('danger');
+            else if (remaining <= 10) circle.classList.add('warning');
+
+            if (remaining === 30) fetchCode();
+        }
+
+        tick();
+        totpIntervals[entryId] = setInterval(tick, 1000);
+    }
+
+    // ── Toggle password visibility ───────────────────────────────────────────
+    const revealed = {};
+    async function togglePassword(id) {
+        const display = document.getElementById(`pw-display-${id}`);
+        const icon = document.getElementById(`pw-icon-${id}`);
+        if (revealed[id]) {
+            display.textContent = '••••••••••••';
+            display.classList.add('text-slate-400');
+            display.classList.remove('text-white');
+            icon.setAttribute('data-lucide', 'eye');
+            revealed[id] = false;
+        } else {
+            try {
+                const data = await api('GET', `/api/entries/${id}/password`);
+                display.textContent = data.password;
+                display.classList.remove('text-slate-400');
+                display.classList.add('text-white');
+                icon.setAttribute('data-lucide', 'eye-off');
+                revealed[id] = true;
+            } catch (e) { toast(e.message, 'error'); }
+        }
+        lucide.createIcons();
+    }
+
+    // ── Copy password ────────────────────────────────────────────────────────
+    async function copyPassword(id) {
+        try {
+            const data = await api('GET', `/api/entries/${id}/password`);
+            await navigator.clipboard.writeText(data.password);
+            toast('Password copied! Auto-clears in 30s', 'info');
+
+            // Auto-clear clipboard after 30 seconds
+            if (clipboardTimeout) clearTimeout(clipboardTimeout);
+            clipboardTimeout = setTimeout(async () => {
+                try {
+                    await navigator.clipboard.writeText('');
+                    toast('Clipboard cleared for security', 'info');
+                } catch {}
+            }, 30000);
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    // ── Delete entry ─────────────────────────────────────────────────────────
+    async function deleteEntry(id, name) {
+        if (!confirm(`Delete credentials for "${name}"?`)) return;
+        try {
+            await api('DELETE', `/api/entries/${id}`);
+            toast('Entry deleted', 'success');
+            loadEntries();
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    // ── Add entry modal ──────────────────────────────────────────────────────
+    function openAddModal() {
+        document.getElementById('modal-add').classList.remove('hidden');
+        document.getElementById('add-website').value = '';
+        document.getElementById('add-username').value = '';
+        document.getElementById('add-password').value = '';
+        document.getElementById('add-totp').value = '';
+        lucide.createIcons();
+        document.getElementById('add-website').focus();
+    }
+    function closeAddModal() { document.getElementById('modal-add').classList.add('hidden'); }
+
+    async function doAddEntry() {
+        const website = document.getElementById('add-website').value.trim();
+        const username = document.getElementById('add-username').value.trim();
+        const password = document.getElementById('add-password').value.trim();
+        const totpSecret = document.getElementById('add-totp').value.trim() || null;
+
+        if (!website || !username || !password)
+            return toast('Website, username, and password are required', 'error');
+
+        try {
+            await api('POST', '/api/entries', { website, username, password, totp_secret: totpSecret });
+            toast('Entry saved!', 'success');
+            closeAddModal();
+            loadEntries();
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    // ── Password generator ───────────────────────────────────────────────────
+    function generatePassword() {
+        const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|;:,.<>?';
+        const arr = new Uint32Array(20);
+        crypto.getRandomValues(arr);
+        const pw = Array.from(arr, v => chars[v % chars.length]).join('');
+        document.getElementById('add-password').value = pw;
+    }
+
+    // ── TOTP secret generator ────────────────────────────────────────────────
+    function generateTotpSecret() {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+        const arr = new Uint32Array(32);
+        crypto.getRandomValues(arr);
+        const secret = Array.from(arr, v => chars[v % chars.length]).join('');
+        document.getElementById('add-totp').value = secret;
+    }
+
+    // ── Prompt add TOTP to existing entry ────────────────────────────────────
+    async function promptAddTotp(entryId) {
+        const secret = prompt('Enter TOTP Base32 secret:');
+        if (!secret) return;
+        try {
+            await api('POST', `/api/entries/${entryId}/totp`, { secret: secret.trim() });
+            toast('TOTP added!', 'success');
+            loadEntries();
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    // ── Show QR modal ────────────────────────────────────────────────────────
+    async function showQr(entryId) {
+        try {
+            const data = await api('GET', `/api/entries/${entryId}/totp/qr`);
+            document.getElementById('qr-image').src = `data:image/png;base64,${data.qr}`;
+            document.getElementById('qr-subtitle').textContent = `${data.issuer} — ${data.account}`;
+            document.getElementById('modal-qr').classList.remove('hidden');
+            lucide.createIcons();
+        } catch (e) { toast(e.message, 'error'); }
+    }
+    function closeQrModal() { document.getElementById('modal-qr').classList.add('hidden'); }
+
+    // ── HTML escape ──────────────────────────────────────────────────────────
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    // ── Init ─────────────────────────────────────────────────────────────────
+    async function init() {
+        try {
+            const status = await api('GET', '/api/status');
+            if (status.logged_in) {
+                showScreen('dashboard');
+                loadEntries();
+            } else if (status.master_exists) {
+                showScreen('login');
+            } else {
+                showScreen('signup');
+            }
+        } catch {
+            showScreen('signup');
+        }
+    }
+
+    // Boot
+    document.addEventListener('DOMContentLoaded', () => {
+        lucide.createIcons();
+        init();
+    });
+    </script>
+</body>
+</html>

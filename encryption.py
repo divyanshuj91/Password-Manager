@@ -1,18 +1,33 @@
 """
-encryption.py — Fernet-based encryption with PBKDF2 key derivation.
+encryption.py — Zero-Knowledge encryption module.
 
-Provides functions to:
-  • Derive a Fernet key from a master password + salt (PBKDF2-HMAC-SHA256).
-  • Encrypt / decrypt arbitrary strings.
-  • Hash/verify the master password (SHA-256) for login checks.
+Security Architecture
+---------------------
+• Master password hashing  : Argon2id (memory-hard, side-channel resistant)
+• Key derivation           : PBKDF2-HMAC-SHA256 → Fernet-compatible key
+• Vault encryption         : Fernet (AES-128-CBC + HMAC-SHA256)
+
+The master password is NEVER stored — only its Argon2 hash.
+All vault data is encrypted with a key derived from the master password,
+so even a full database leak reveals nothing without the master password.
 """
 
 import os
 import base64
-import hashlib
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError, VerificationError, InvalidHashError
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.fernet import Fernet
+
+# Argon2id hasher with secure defaults
+_ph = PasswordHasher(
+    time_cost=3,        # iterations
+    memory_cost=65536,  # 64 MB
+    parallelism=4,
+    hash_len=32,
+    salt_len=16,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -56,14 +71,22 @@ def decrypt(cipher_text: str, key: bytes) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Master-password hashing (for login verification)
+# Master-password hashing — Argon2id (Zero-Knowledge)
 # ---------------------------------------------------------------------------
 
 def hash_master_password(password: str) -> str:
-    """Return a SHA-256 hex-digest of the master password."""
-    return hashlib.sha256(password.encode()).hexdigest()
+    """
+    Hash the master password using Argon2id.
+
+    Returns an encoded hash string containing the algorithm parameters,
+    salt, and hash — suitable for storage and later verification.
+    """
+    return _ph.hash(password)
 
 
 def verify_master_password(password: str, stored_hash: str) -> bool:
-    """Return True if *password* matches the *stored_hash*."""
-    return hash_master_password(password) == stored_hash
+    """Return True if *password* matches the Argon2 *stored_hash*."""
+    try:
+        return _ph.verify(stored_hash, password)
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
+        return False

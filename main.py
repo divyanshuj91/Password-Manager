@@ -21,20 +21,21 @@ from tkinter import messagebox
 
 import encryption
 import database
+import totp
 
 # ── Appearance ────────────────────────────────────────────────────────────
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 # ── Colour palette ────────────────────────────────────────────────────────
-BG_DARK       = "#1a1a2e"
-CARD_BG       = "#16213e"
-ACCENT        = "#0f3460"
-HIGHLIGHT      = "#e94560"
-TEXT_PRIMARY   = "#ffffff"
-TEXT_SECONDARY = "#a8a8b3"
-ENTRY_BG       = "#0f3460"
-BUTTON_HOVER   = "#e94560"
+BG_DARK       = "#000000"
+CARD_BG       = "#202124"
+ACCENT        = "#303134"
+HIGHLIGHT     = "#8ab4f8"
+TEXT_PRIMARY  = "#e8eaed"
+TEXT_SECONDARY = "#9ca3af"
+ENTRY_BG      = "#202124"
+BUTTON_HOVER  = "#3c4043"
 
 
 class PasswordManagerApp(ctk.CTk):
@@ -51,6 +52,8 @@ class PasswordManagerApp(ctk.CTk):
         database.init_db()
 
         self.encryption_key = None  # set after successful login
+        self._totp_labels = {}
+        self._timer_running = False
 
         # Container that holds all "screens"
         self.container = ctk.CTkFrame(self, fg_color=BG_DARK)
@@ -175,125 +178,210 @@ class PasswordManagerApp(ctk.CTk):
         self._clear()
 
         # ── Top bar ──
-        top = ctk.CTkFrame(self.container, fg_color=CARD_BG, height=60, corner_radius=0)
+        top = ctk.CTkFrame(self.container, fg_color=BG_DARK, height=60, corner_radius=0)
         top.pack(fill="x")
         top.pack_propagate(False)
 
-        ctk.CTkLabel(top, text="🔐 Vault Dashboard",
-                     font=ctk.CTkFont(size=20, weight="bold"),
-                     text_color=TEXT_PRIMARY).pack(side="left", padx=20)
+        header_frame = ctk.CTkFrame(top, fg_color="transparent")
+        header_frame.pack(side="left", padx=15, pady=12)
+        
+        ctk.CTkLabel(header_frame, text="≡", font=ctk.CTkFont(size=24), text_color=TEXT_SECONDARY).pack(side="left", padx=(0, 15))
+        ctk.CTkLabel(header_frame, text="Authenticator",
+                     font=ctk.CTkFont(size=20, weight="normal"),
+                     text_color=TEXT_PRIMARY).pack(side="left")
 
-        ctk.CTkButton(top, text="＋ Add New", width=130, height=36,
-                      corner_radius=10, fg_color=HIGHLIGHT,
-                      hover_color="#c73652",
-                      font=ctk.CTkFont(size=14, weight="bold"),
-                      command=self._open_add_dialog).pack(side="right", padx=(0, 10), pady=12)
+        actions_frame = ctk.CTkFrame(top, fg_color="transparent")
+        actions_frame.pack(side="right", padx=15, pady=12)
+        
+        ctk.CTkButton(actions_frame, text="🔍", width=36, height=36, corner_radius=18,
+                      fg_color="transparent", hover_color=BUTTON_HOVER, text_color=TEXT_PRIMARY, font=ctk.CTkFont(size=18)).pack(side="left", padx=5)
+                      
+        user_btn = ctk.CTkButton(actions_frame, text="👤", width=32, height=32, corner_radius=16,
+                                 fg_color=HIGHLIGHT, hover_color="#6b9cf6", text_color=BG_DARK,
+                                 font=ctk.CTkFont(size=14), command=self._lock_vault)
+        user_btn.pack(side="right", padx=5)
 
-        ctk.CTkButton(top, text="🔒 Lock", width=90, height=36,
-                      corner_radius=10, fg_color=ACCENT,
-                      hover_color="#0a2647",
-                      font=ctk.CTkFont(size=13),
-                      command=self._lock_vault).pack(side="right", padx=(0, 8), pady=12)
-
-        # ── Column headers ──
-        header = ctk.CTkFrame(self.container, fg_color=ACCENT, height=40, corner_radius=0)
-        header.pack(fill="x")
-        header.pack_propagate(False)
-
-        for col, w in [("Website", 180), ("Username", 180), ("Password", 180), ("Actions", 250)]:
-            ctk.CTkLabel(header, text=col, width=w,
-                         font=ctk.CTkFont(size=13, weight="bold"),
-                         text_color=TEXT_SECONDARY).pack(side="left", padx=8)
+        # ── Start live updates ──
+        if not self._timer_running:
+            self._timer_running = True
+            self._update_timers()
 
         # ── Scrollable list ──
-        self.scroll = ctk.CTkScrollableFrame(self.container, fg_color=BG_DARK)
-        self.scroll.pack(fill="both", expand=True, padx=0, pady=0)
+        self.scroll = ctk.CTkScrollableFrame(self.container, fg_color=BG_DARK, corner_radius=0)
+        self.scroll.pack(fill="both", expand=True)
+
+        fab_frame = ctk.CTkFrame(self.container, fg_color="transparent")
+        fab_frame.place(relx=1.0, rely=1.0, x=-24, y=-24, anchor="se")
+        ctk.CTkButton(fab_frame, text="＋", width=56, height=56, corner_radius=16,
+                      fg_color="#202124", hover_color="#303134",
+                      font=ctk.CTkFont(size=28, weight="bold"),
+                      text_color="#8ab4f8", command=self._open_add_dialog).pack()
 
         self._refresh_entries()
+
+    # ── Live Timers ───────────────────────────────────────────────────
+
+    def _update_timers(self):
+        if not self.encryption_key or not self._timer_running:
+            self._timer_running = False
+            return
+            
+        remaining = totp.get_time_remaining()
+        
+        for eid, data in self._totp_labels.items():
+            try:
+                secret = encryption.decrypt(data["enc_totp"], self.encryption_key)
+                code = totp.get_totp_code(secret)
+                data["code_label"].configure(text=f"{code[:3]} {code[3:]}")
+                data["time_label"].configure(text=f"{remaining}s")
+                if remaining <= 5:
+                    data["time_label"].configure(text_color="#ef4444")
+                elif remaining <= 10:
+                    data["time_label"].configure(text_color="#f59e0b")
+                else:
+                    data["time_label"].configure(text_color=TEXT_PRIMARY)
+            except Exception:
+                pass
+                
+        self.after(1000, self._update_timers)
 
     # ── Refresh the entry list ────────────────────────────────────────
 
     def _refresh_entries(self):
         for w in self.scroll.winfo_children():
             w.destroy()
+            
+        self._totp_labels.clear()
 
-        entries = database.get_all_entries()
+        entries = database.get_all_entries_full()
 
         if not entries:
-            ctk.CTkLabel(self.scroll, text="Your vault is empty.\nClick  ＋ Add New  to save your first password.",
-                         font=ctk.CTkFont(size=14), text_color=TEXT_SECONDARY).pack(pady=60)
+            ctk.CTkLabel(self.scroll, text="Looks like there are no codes yet.",
+                         font=ctk.CTkFont(size=16), text_color=TEXT_PRIMARY).pack(pady=(120, 5))
+            ctk.CTkLabel(self.scroll, text="Add a code using the + button.",
+                         font=ctk.CTkFont(size=13), text_color=TEXT_SECONDARY).pack()
             return
 
-        for idx, (eid, website, username, enc_pw) in enumerate(entries):
-            row_color = CARD_BG if idx % 2 == 0 else "#1b2a4a"
-            row = ctk.CTkFrame(self.scroll, fg_color=row_color, height=48, corner_radius=8)
-            row.pack(fill="x", padx=6, pady=3)
-            row.pack_propagate(False)
+        for idx, entry in enumerate(entries):
+            eid = entry["id"]
+            site = entry["website"]
+            user = entry["username"]
+            enc_pw = entry["encrypted_password"]
+            enc_totp = entry["totp_secret"]
 
-            ctk.CTkLabel(row, text=website, width=180,
-                         font=ctk.CTkFont(size=13), text_color=TEXT_PRIMARY,
-                         anchor="w").pack(side="left", padx=8)
-            ctk.CTkLabel(row, text=username, width=180,
-                         font=ctk.CTkFont(size=13), text_color=TEXT_PRIMARY,
-                         anchor="w").pack(side="left", padx=8)
+            row = ctk.CTkFrame(self.scroll, fg_color=BG_DARK, corner_radius=0)
+            row.pack(fill="x", padx=10, pady=5)
 
-            pw_label = ctk.CTkLabel(row, text="••••••••", width=180,
-                                    font=ctk.CTkFont(size=13), text_color=TEXT_PRIMARY,
-                                    anchor="w")
-            pw_label.pack(side="left", padx=8)
+            left_frame = ctk.CTkFrame(row, fg_color="transparent")
+            left_frame.pack(side="left", padx=15, pady=10)
+            
+            ctk.CTkLabel(left_frame, text=f"{site} ({user})", font=ctk.CTkFont(size=14), text_color=TEXT_SECONDARY, anchor="w").pack(fill="x")
+            
+            right_frame = ctk.CTkFrame(row, fg_color="transparent")
+            right_frame.pack(side="right", padx=15, pady=10)
 
-            # State tracking for show/hide
-            revealed = {"state": False}
+            def make_open_view(e_id, e_site, e_user, e_pw, e_totp):
+                def action(event=None):
+                    self._open_view_dialog(e_id, e_site, e_user, e_pw, e_totp)
+                return action
 
-            def make_toggle(lbl, cipher, rev):
-                def toggle():
-                    if rev["state"]:
-                        lbl.configure(text="••••••••")
-                        rev["state"] = False
-                    else:
+            view_action = make_open_view(eid, site, user, enc_pw, enc_totp)
+            row.bind("<Button-1>", view_action)
+            left_frame.bind("<Button-1>", view_action)
+            right_frame.bind("<Button-1>", view_action)
+
+            for child in left_frame.winfo_children() + right_frame.winfo_children():
+                child.bind("<Button-1>", view_action)
+
+            if enc_totp:
+                def make_copy_totp(cipher):
+                    def copy(event=None):
                         try:
-                            plain = encryption.decrypt(cipher, self.encryption_key)
-                            lbl.configure(text=plain)
-                            rev["state"] = True
+                            secret = encryption.decrypt(cipher, self.encryption_key)
+                            code = totp.get_totp_code(secret)
+                            self.clipboard_clear()
+                            self.clipboard_append(code)
+                            messagebox.showinfo("Copied", "Code copied", icon="info")
                         except Exception:
-                            messagebox.showerror("Error", "Decryption failed.")
-                return toggle
+                            pass
+                    return copy
+                
+                code_lbl = ctk.CTkLabel(left_frame, text="------", font=ctk.CTkFont(size=34, family="Courier", weight="normal"), text_color=HIGHLIGHT, anchor="w", cursor="hand2")
+                code_lbl.pack(fill="x", pady=(5,0))
+                code_action = make_copy_totp(enc_totp)
+                code_lbl.bind("<Button-1>", code_action)
+                
+                time_lbl = ctk.CTkLabel(right_frame, text="30", font=ctk.CTkFont(size=18, weight="bold"), text_color=TEXT_PRIMARY)
+                time_lbl.pack(side="right", padx=10, pady=15)
+                
+                self._totp_labels[eid] = {
+                    "enc_totp": enc_totp,
+                    "code_label": code_lbl,
+                    "time_label": time_lbl
+                }
+            else:
+                ctk.CTkLabel(left_frame, text="Pass🔑", font=ctk.CTkFont(size=18), text_color=TEXT_SECONDARY, anchor="w").pack(fill="x", pady=(5,0))
 
-            def make_copy(cipher):
-                def copy():
-                    try:
-                        plain = encryption.decrypt(cipher, self.encryption_key)
-                        self.clipboard_clear()
-                        self.clipboard_append(plain)
-                        messagebox.showinfo("Copied", "Password copied to clipboard!")
-                    except Exception:
-                        messagebox.showerror("Error", "Decryption failed.")
-                return copy
+    def _open_view_dialog(self, eid, site, user, enc_pw, enc_totp):
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Account Info")
+        dialog.geometry("380x360")
+        dialog.configure(fg_color=BG_DARK)
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
 
-            def make_delete(entry_id):
-                def delete():
-                    if messagebox.askyesno("Confirm", "Delete this entry?"):
-                        database.delete_entry(entry_id)
-                        self._refresh_entries()
-                return delete
+        ctk.CTkLabel(dialog, text="Account Info",
+                     font=ctk.CTkFont(size=20),
+                     text_color=TEXT_PRIMARY).pack(pady=(20, 16))
+                     
+        ctk.CTkLabel(dialog, text=f"Website: {site}", text_color=TEXT_SECONDARY, anchor="w").pack(fill="x", padx=30, pady=2)
+        ctk.CTkLabel(dialog, text=f"Username: {user}", text_color=TEXT_SECONDARY, anchor="w").pack(fill="x", padx=30, pady=2)
 
-            btn_frame = ctk.CTkFrame(row, fg_color="transparent")
-            btn_frame.pack(side="right", padx=6)
+        revealed = {"state": False}
+        pw_str = ctk.StringVar(value="••••••••••••••••")
+        
+        pw_frame = ctk.CTkFrame(dialog, fg_color=ENTRY_BG, corner_radius=8, height=40)
+        pw_frame.pack(fill="x", padx=30, pady=15)
+        pw_frame.pack_propagate(False)
+        
+        ctk.CTkLabel(pw_frame, textvariable=pw_str, font=ctk.CTkFont(family="Courier"), text_color=TEXT_PRIMARY).pack(side="left", padx=15)
+        
+        def toggle_pw():
+            if revealed["state"]:
+                pw_str.set("••••••••••••••••")
+                revealed["state"] = False
+            else:
+                try:
+                    plain = encryption.decrypt(enc_pw, self.encryption_key)
+                    pw_str.set(plain)
+                    revealed["state"] = True
+                except Exception:
+                    pass
 
-            ctk.CTkButton(btn_frame, text="👁 Show", width=70, height=30,
-                          corner_radius=8, fg_color=ACCENT,
-                          hover_color="#0a2647", font=ctk.CTkFont(size=12),
-                          command=make_toggle(pw_label, enc_pw, revealed)).pack(side="left", padx=2)
+        def copy_pw():
+             try:
+                 plain = encryption.decrypt(enc_pw, self.encryption_key)
+                 self.clipboard_clear()
+                 self.clipboard_append(plain)
+                 messagebox.showinfo("Copied", "Password copied!")
+             except Exception:
+                 pass
+                 
+        ctk.CTkButton(pw_frame, text="📋", width=30, fg_color="transparent", hover_color=BUTTON_HOVER, text_color=HIGHLIGHT, command=copy_pw).pack(side="right", padx=(0, 5))
+        ctk.CTkButton(pw_frame, text="👁", width=30, fg_color="transparent", hover_color=BUTTON_HOVER, text_color=HIGHLIGHT, command=toggle_pw).pack(side="right", padx=(0, 5))
 
-            ctk.CTkButton(btn_frame, text="📋 Copy", width=70, height=30,
-                          corner_radius=8, fg_color=ACCENT,
-                          hover_color="#0a2647", font=ctk.CTkFont(size=12),
-                          command=make_copy(enc_pw)).pack(side="left", padx=2)
+        def on_delete():
+            if messagebox.askyesno("Confirm", "Delete this account?"):
+                database.delete_entry(eid)
+                dialog.destroy()
+                self._refresh_entries()
 
-            ctk.CTkButton(btn_frame, text="🗑", width=36, height=30,
-                          corner_radius=8, fg_color="#8B0000",
-                          hover_color="#b91c1c", font=ctk.CTkFont(size=14),
-                          command=make_delete(eid)).pack(side="left", padx=2)
+        ctk.CTkButton(dialog, text="Delete Account", width=320, height=40,
+                      corner_radius=20, fg_color="transparent", border_width=1, border_color="#f28b82",
+                      hover_color="#f28b82", text_color="#f28b82",
+                      font=ctk.CTkFont(size=14),
+                      command=on_delete).pack(pady=(20, 10))
 
     # ── Add-entry dialog ──────────────────────────────────────────────
 

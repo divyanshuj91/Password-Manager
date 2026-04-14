@@ -1,0 +1,19 @@
+# Core encryption
+cryptography
+argon2-cffi
+
+# Desktop GUI
+customtkinter
+
+# TOTP / 2FA
+pyotp
+qrcode[pil]
+
+# Web backend
+fastapi
+uvicorn[standard]
+python-jose[cryptography]
+jinja2
+
+# ORM (PostgreSQL-ready)
+sqlalchemy

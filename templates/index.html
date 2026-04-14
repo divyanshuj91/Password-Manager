@@ -41,53 +41,19 @@
 
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Inter', system-ui, sans-serif; background: #06080f; color: #f1f5f9; }
-
-        /* ── Animated gradient background ── */
-        .bg-mesh {
-            background:
-                radial-gradient(ellipse at 20% 50%, rgba(99,102,241,0.08) 0%, transparent 50%),
-                radial-gradient(ellipse at 80% 20%, rgba(139,92,246,0.06) 0%, transparent 50%),
-                radial-gradient(ellipse at 50% 80%, rgba(14,165,233,0.05) 0%, transparent 50%),
-                #06080f;
-            min-height: 100vh;
-        }
-
-        /* ── Glassmorphism card ── */
-        .glass {
-            background: rgba(17, 24, 39, 0.7);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255,255,255,0.06);
-        }
-
-        .glass-light {
-            background: rgba(26, 31, 54, 0.6);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255,255,255,0.05);
-        }
-
-        /* ── Card hover ── */
-        .card-hover {
-            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-        }
-        .card-hover:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 32px rgba(99,102,241,0.12);
-            border-color: rgba(99,102,241,0.2);
-        }
+        body { font-family: 'Inter', system-ui, sans-serif; background: #000000; color: #e8eaed; }
 
         /* ── TOTP circular countdown ── */
         .totp-ring {
             transform: rotate(-90deg);
         }
-        .totp-ring-bg { stroke: rgba(255,255,255,0.06); }
+        .totp-ring-bg { stroke: #202124; }
         .totp-ring-fg {
-            stroke: #6366f1;
+            stroke: #8ab4f8;
             transition: stroke-dashoffset 1s linear, stroke 0.3s ease;
         }
-        .totp-ring-fg.warning { stroke: #f59e0b; }
-        .totp-ring-fg.danger { stroke: #ef4444; }
+        .totp-ring-fg.warning { stroke: #f28b82; }
+        .totp-ring-fg.danger { stroke: #f28b82; }
 
         /* ── Strength meter ── */
         .strength-bar {
@@ -103,307 +69,202 @@
         }
         .fade-in { animation: fadeIn 0.4s ease forwards; }
 
-        @keyframes slideInRight {
-            from { opacity: 0; transform: translateX(100%); }
-            to { opacity: 1; transform: translateX(0); }
-        }
-        .slide-in-right { animation: slideInRight 0.35s ease forwards; }
-
-        @keyframes slideOutRight {
-            from { opacity: 1; transform: translateX(0); }
-            to { opacity: 0; transform: translateX(100%); }
-        }
-        .slide-out-right { animation: slideOutRight 0.3s ease forwards; }
-
         /* ── Modal backdrop ── */
         .modal-backdrop {
             background: rgba(0,0,0,0.6);
-            backdrop-filter: blur(4px);
         }
 
         /* ── Custom scrollbar ── */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,0.5); }
-
-        /* ── Input focus ring ── */
-        input:focus { outline: none; box-shadow: 0 0 0 2px rgba(99,102,241,0.4); }
-
-        /* ── Button press effect ── */
-        button:active:not(:disabled) { transform: scale(0.97); }
+        ::-webkit-scrollbar { width: 0px; }
 
         /* hidden utility */
         .hidden { display: none !important; }
 
-        /* ── Glow text for TOTP code ── */
-        .totp-code {
-            text-shadow: 0 0 20px rgba(99,102,241,0.4);
-        }
-
-        /* ── Entry stagger animation ── */
-        .entry-card { opacity: 0; animation: fadeIn 0.4s ease forwards; }
+        /* ── Entry hover ── */
+        .entry-hover:active { background: #202124; }
     </style>
 </head>
-<body class="bg-mesh">
+<body class="bg-black text-[#e8eaed]">
 
     <!-- ════════════════════════════════════════════════════════════════════ -->
     <!-- TOAST CONTAINER -->
-    <!-- ════════════════════════════════════════════════════════════════════ -->
     <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-3 pointer-events-none"></div>
 
-    <!-- ════════════════════════════════════════════════════════════════════ -->
     <!-- SCREEN: SIGNUP -->
-    <!-- ════════════════════════════════════════════════════════════════════ -->
     <div id="screen-signup" class="hidden min-h-screen flex items-center justify-center p-4">
-        <div class="glass rounded-2xl p-8 w-full max-w-md fade-in">
+        <div class="bg-[#202124] rounded-3xl p-8 w-full max-w-md fade-in">
             <div class="text-center mb-8">
-                <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-500/20">
-                    <i data-lucide="shield-plus" class="w-8 h-8 text-white"></i>
-                </div>
-                <h1 class="text-2xl font-bold text-white">Create Your Vault</h1>
-                <p class="text-slate-400 text-sm mt-2">Set a master password to protect your entire vault.</p>
+                <h1 class="text-2xl font-medium text-white mb-2">Create Your Vault</h1>
+                <p class="text-[#9ca3af] text-sm">Set a master password</p>
             </div>
-
             <div class="space-y-4">
                 <div>
-                    <label class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5 block">Master Password</label>
                     <div class="relative">
-                        <input id="signup-pw" type="password" placeholder="Min. 6 characters"
-                               class="w-full px-4 py-3 rounded-xl bg-vault-700 border border-white/5 text-white placeholder-slate-500 text-sm"
-                               oninput="updateStrength(this.value)">
-                        <button onclick="toggleVis('signup-pw', 'signup-eye')" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition">
+                        <input id="signup-pw" type="password" placeholder="Master Password" class="w-full px-4 py-3 rounded-lg bg-[#303134] text-white placeholder-[#9ca3af] text-sm focus:outline-none focus:ring-1 focus:ring-[#8ab4f8]" oninput="updateStrength(this.value)">
+                        <button onclick="toggleVis('signup-pw', 'signup-eye')" class="absolute right-3 top-1/2 -translate-y-1/2 text-[#9ca3af] hover:text-white transition">
                             <i id="signup-eye" data-lucide="eye-off" class="w-4 h-4"></i>
                         </button>
                     </div>
-                    <!-- Strength meter -->
-                    <div class="mt-2 h-1 bg-vault-600 rounded-full overflow-hidden">
+                    <div class="mt-2 h-1 bg-[#303134] rounded-full overflow-hidden">
                         <div id="strength-bar" class="strength-bar bg-red-500" style="width: 0%"></div>
                     </div>
-                    <p id="strength-text" class="text-xs text-slate-500 mt-1">Enter a password</p>
+                    <p id="strength-text" class="text-xs text-[#9ca3af] mt-1">Enter a password</p>
                 </div>
                 <div>
-                    <label class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5 block">Confirm Password</label>
-                    <input id="signup-confirm" type="password" placeholder="Re-enter your password"
-                           class="w-full px-4 py-3 rounded-xl bg-vault-700 border border-white/5 text-white placeholder-slate-500 text-sm">
+                    <input id="signup-confirm" type="password" placeholder="Confirm Password" class="w-full px-4 py-3 rounded-lg bg-[#303134] text-white placeholder-[#9ca3af] text-sm focus:outline-none focus:ring-1 focus:ring-[#8ab4f8]">
                 </div>
-
-                <button id="btn-signup" onclick="doSignup()"
-                        class="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 text-white font-semibold text-sm
-                               hover:from-indigo-400 hover:to-violet-500 transition-all duration-200 shadow-lg shadow-indigo-500/20 mt-2">
-                    <span class="flex items-center justify-center gap-2">
-                        <i data-lucide="lock" class="w-4 h-4"></i> Create Vault
-                    </span>
-                </button>
+                <button id="btn-signup" onclick="doSignup()" class="w-full py-3 rounded-full bg-[#8ab4f8] text-black font-medium text-sm hover:opacity-90 transition-opacity mt-4">Create</button>
             </div>
         </div>
     </div>
 
-    <!-- ════════════════════════════════════════════════════════════════════ -->
     <!-- SCREEN: LOGIN -->
-    <!-- ════════════════════════════════════════════════════════════════════ -->
     <div id="screen-login" class="hidden min-h-screen flex items-center justify-center p-4">
-        <div class="glass rounded-2xl p-8 w-full max-w-md fade-in">
+        <div class="bg-[#202124] rounded-3xl p-8 w-full max-w-md fade-in">
             <div class="text-center mb-8">
-                <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-500/20">
-                    <i data-lucide="lock-keyhole" class="w-8 h-8 text-white"></i>
-                </div>
-                <h1 class="text-2xl font-bold text-white">Unlock Your Vault</h1>
-                <p class="text-slate-400 text-sm mt-2">Enter your master password to continue.</p>
+                <h1 class="text-2xl font-medium text-white mb-2">Unlock Vault</h1>
+                <p class="text-[#9ca3af] text-sm">Enter your master password</p>
             </div>
-
             <div class="space-y-4">
                 <div class="relative">
-                    <input id="login-pw" type="password" placeholder="Master Password"
-                           class="w-full px-4 py-3 rounded-xl bg-vault-700 border border-white/5 text-white placeholder-slate-500 text-sm"
-                           onkeydown="if(event.key==='Enter') doLogin()">
-                    <button onclick="toggleVis('login-pw', 'login-eye')" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition">
+                    <input id="login-pw" type="password" placeholder="Master Password" class="w-full px-4 py-3 rounded-lg bg-[#303134] text-white placeholder-[#9ca3af] text-sm focus:outline-none focus:ring-1 focus:ring-[#8ab4f8]" onkeydown="if(event.key==='Enter') doLogin()">
+                    <button onclick="toggleVis('login-pw', 'login-eye')" class="absolute right-3 top-1/2 -translate-y-1/2 text-[#9ca3af] hover:text-white transition">
                         <i id="login-eye" data-lucide="eye-off" class="w-4 h-4"></i>
                     </button>
                 </div>
-                <p id="login-error" class="text-rose-400 text-xs hidden"></p>
-
-                <button id="btn-login" onclick="doLogin()"
-                        class="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 text-white font-semibold text-sm
-                               hover:from-indigo-400 hover:to-violet-500 transition-all duration-200 shadow-lg shadow-indigo-500/20">
-                    <span class="flex items-center justify-center gap-2">
-                        <i data-lucide="unlock" class="w-4 h-4"></i> Unlock
-                    </span>
-                </button>
+                <p id="login-error" class="text-[#f28b82] text-xs hidden"></p>
+                <button id="btn-login" onclick="doLogin()" class="w-full py-3 rounded-full bg-[#8ab4f8] text-black font-medium text-sm hover:opacity-90 transition-opacity mt-2">Unlock</button>
             </div>
         </div>
     </div>
 
-    <!-- ════════════════════════════════════════════════════════════════════ -->
     <!-- SCREEN: DASHBOARD -->
-    <!-- ════════════════════════════════════════════════════════════════════ -->
-    <div id="screen-dashboard" class="hidden min-h-screen flex flex-col">
-
-        <!-- ── Top bar ── -->
-        <header class="glass sticky top-0 z-40 border-b border-white/5">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-                <!-- Logo -->
-                <div class="flex items-center gap-3">
-                    <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-                        <i data-lucide="shield-check" class="w-5 h-5 text-white"></i>
-                    </div>
-                    <h1 class="text-lg font-bold text-white hidden sm:block">Vault</h1>
-                </div>
-
-                <!-- Search -->
-                <div class="relative flex-1 max-w-md mx-4">
-                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
-                    <input id="search-input" type="text" placeholder="Search vault..."
-                           class="w-full pl-10 pr-4 py-2 rounded-xl bg-vault-700 border border-white/5 text-sm text-white placeholder-slate-500"
-                           oninput="filterEntries(this.value)">
-                </div>
-
-                <!-- Actions -->
-                <div class="flex items-center gap-2">
-                    <button onclick="openAddModal()"
-                            class="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600
-                                   text-white text-sm font-medium hover:from-indigo-400 hover:to-violet-500 transition-all shadow-lg shadow-indigo-500/20">
-                        <i data-lucide="plus" class="w-4 h-4"></i>
-                        <span class="hidden sm:inline">Add New</span>
+    <div id="screen-dashboard" class="hidden min-h-screen flex flex-col relative pb-32">
+        <header class="sticky top-0 z-40 bg-black pt-2">
+            <div class="max-w-[500px] mx-auto px-4 h-16 flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <button class="p-2 -ml-2 text-[#e8eaed] hover:text-white rounded-full">
+                        <i data-lucide="menu" class="w-[22px] h-[22px]"></i>
                     </button>
-                    <button onclick="doLogout()"
-                            class="flex items-center gap-2 px-3 py-2 rounded-xl bg-vault-700 border border-white/5
-                                   text-slate-300 text-sm hover:bg-vault-600 hover:text-white transition-all">
-                        <i data-lucide="log-out" class="w-4 h-4"></i>
-                        <span class="hidden sm:inline">Lock</span>
+                    <h1 class="text-[20px] text-[#e8eaed]">Authenticator</h1>
+                </div>
+                <div class="flex items-center gap-2 text-[#e8eaed]">
+                    <div class="relative">
+                        <button class="p-2 rounded-full hover:bg-white/10" onclick="document.getElementById('search-input-wrap').classList.toggle('hidden'); document.getElementById('search-input').focus();">
+                            <i data-lucide="search" class="w-[22px] h-[22px]"></i>
+                        </button>
+                        <div id="search-input-wrap" class="hidden absolute right-12 top-1/2 -translate-y-1/2">
+                            <input id="search-input" type="text" placeholder="Search..." class="w-48 px-3 py-2 bg-[#202124] text-white text-sm rounded-lg focus:outline-none" oninput="filterEntries(this.value)">
+                        </div>
+                    </div>
+                    <button class="p-1 -mr-1 rounded-full hover:bg-white/10" onclick="doLogout()">
+                        <div class="w-7 h-7 rounded-full bg-[#8ab4f8] flex items-center justify-center text-black text-xs font-bold leading-none">
+                            <i data-lucide="log-out" class="w-3.5 h-3.5 ml-0.5"></i>
+                        </div>
                     </button>
                 </div>
             </div>
         </header>
 
-        <!-- ── Main content ── -->
-        <main class="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6">
-            <!-- Stats bar -->
-            <div id="stats-bar" class="flex items-center gap-4 mb-6 text-sm text-slate-400">
-                <span class="flex items-center gap-1.5">
-                    <i data-lucide="key-round" class="w-4 h-4 text-indigo-400"></i>
-                    <span id="stat-count">0</span> passwords
-                </span>
-                <span class="flex items-center gap-1.5">
-                    <i data-lucide="timer" class="w-4 h-4 text-violet-400"></i>
-                    <span id="stat-totp">0</span> with 2FA
-                </span>
+        <main class="flex-1 max-w-[500px] mx-auto w-full pt-2">
+            <div id="empty-state" class="hidden flex flex-col items-center justify-center py-32 text-center px-4">
+                <i data-lucide="shield-check" class="w-20 h-20 text-[#3c4043] mb-4"></i>
+                <h2 class="text-lg font-medium text-[#e8eaed] mb-1">Looks like there are no codes yet.</h2>
+                <p class="text-[#9ca3af] text-sm">Add a code by clicking the + button</p>
+            </div>
+            
+            <div id="stats-bar" class="hidden">
+                 <span id="stat-count"></span>
+                 <span id="stat-totp"></span>
             </div>
 
-            <!-- Empty state -->
-            <div id="empty-state" class="hidden flex flex-col items-center justify-center py-24 text-center">
-                <div class="w-20 h-20 rounded-2xl bg-vault-700 flex items-center justify-center mb-6">
-                    <i data-lucide="vault" class="w-10 h-10 text-slate-500"></i>
-                </div>
-                <h2 class="text-xl font-semibold text-slate-300 mb-2">Your vault is empty</h2>
-                <p class="text-slate-500 text-sm mb-6">Add your first credential to get started.</p>
-                <button onclick="openAddModal()"
-                        class="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600
-                               text-white text-sm font-medium hover:from-indigo-400 hover:to-violet-500 transition-all shadow-lg shadow-indigo-500/20">
-                    <i data-lucide="plus" class="w-4 h-4"></i> Add First Entry
-                </button>
-            </div>
-
-            <!-- Entries grid -->
-            <div id="entries-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+            <div id="entries-grid" class="flex flex-col w-full pb-20"></div>
         </main>
+        
+        <button onclick="openAddModal()" class="fixed bottom-[40px] right-[40px] w-14 h-14 bg-[#202124] rounded-2xl shadow-[0_4px_12px_rgba(0,0,0,0.5)] flex items-center justify-center hover:scale-105 transition-transform z-50 group">
+            <svg viewBox="0 0 36 36" class="w-7 h-7">
+                <rect x="16" y="4" width="4" height="12" fill="#EA4335" class="group-hover:opacity-80 transition-opacity"/> 
+                <rect x="20" y="16" width="12" height="4" fill="#FBBC04" class="group-hover:opacity-80 transition-opacity"/> 
+                <rect x="16" y="20" width="4" height="12" fill="#34A853" class="group-hover:opacity-80 transition-opacity"/> 
+                <rect x="4" y="16" width="12" height="4" fill="#4285F4" class="group-hover:opacity-80 transition-opacity"/> 
+                <rect x="16" y="16" width="4" height="4" fill="#4285F4" />
+            </svg>
+        </button>
     </div>
 
-    <!-- ════════════════════════════════════════════════════════════════════ -->
-    <!-- MODAL: ADD / EDIT ENTRY -->
-    <!-- ════════════════════════════════════════════════════════════════════ -->
-    <div id="modal-add" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop">
-        <div class="glass rounded-2xl p-6 w-full max-w-lg fade-in" onclick="event.stopPropagation()">
+    <!-- MODAL: ADD / VIEW -->
+    <div id="modal-add" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop" onclick="closeAddModal()">
+        <div class="bg-[#202124] rounded-3xl p-6 w-full max-w-sm fade-in" onclick="event.stopPropagation()">
             <div class="flex items-center justify-between mb-6">
-                <h2 class="text-lg font-bold text-white flex items-center gap-2">
-                    <i data-lucide="plus-circle" class="w-5 h-5 text-indigo-400"></i>
-                    Add New Entry
-                </h2>
-                <button onclick="closeAddModal()" class="text-slate-400 hover:text-white transition">
-                    <i data-lucide="x" class="w-5 h-5"></i>
+                <h2 class="text-[20px] font-medium text-[#e8eaed]" id="modal-add-title">Add details</h2>
+            </div>
+
+            <input type="hidden" id="view-id" value="">
+
+            <div class="space-y-4" id="modal-add-form">
+                <div class="relative">
+                    <input id="add-website" type="text" placeholder="Website / App name" class="w-full px-4 py-3.5 rounded-lg bg-transparent border border-[#5f6368] focus:border-[#8ab4f8] text-[#e8eaed] placeholder-[#9ca3af] text-sm focus:outline-none">
+                </div>
+                <div class="relative">
+                    <input id="add-username" type="text" placeholder="Username / Email" class="w-full px-4 py-3.5 rounded-lg bg-transparent border border-[#5f6368] focus:border-[#8ab4f8] text-[#e8eaed] placeholder-[#9ca3af] text-sm focus:outline-none">
+                </div>
+                <div class="relative">
+                    <input id="add-password" type="password" placeholder="Password" class="w-full px-4 py-3.5 pr-10 rounded-lg bg-transparent border border-[#5f6368] focus:border-[#8ab4f8] text-[#e8eaed] placeholder-[#9ca3af] text-sm font-mono focus:outline-none">
+                    <button onclick="generatePassword()" class="absolute right-3 top-1/2 -translate-y-1/2 text-[#8ab4f8] hover:text-blue-300">
+                        <i data-lucide="wand-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                <div class="relative">
+                    <input id="add-totp" type="text" placeholder="Key (Base32)" class="w-full px-4 py-3.5 rounded-lg bg-transparent border border-[#5f6368] focus:border-[#8ab4f8] text-[#e8eaed] placeholder-[#9ca3af] text-sm font-mono focus:outline-none">
+                </div>
+            </div>
+
+            <div class="space-y-4 hidden" id="modal-view-form">
+                <div>
+                   <p class="text-xs text-[#9ca3af] mb-1">Website</p>
+                   <p class="text-sm text-[#e8eaed]" id="view-website"></p>
+                </div>
+                <div>
+                   <p class="text-xs text-[#9ca3af] mb-1">Username</p>
+                   <p class="text-sm text-[#e8eaed]" id="view-username"></p>
+                </div>
+                <div>
+                   <p class="text-xs text-[#9ca3af] mb-1">Password</p>
+                   <div class="flex items-center justify-between bg-[#303134] rounded-lg p-3">
+                       <span class="text-sm font-mono text-[#e8eaed] flex-1" id="view-password">••••••••••••</span>
+                       <div class="flex items-center gap-4 pr-1">
+                           <button onclick="toggleModalPassword()" class="text-[#9ca3af] hover:text-[#8ab4f8]"><i id="modal-pw-icon" data-lucide="eye" class="w-[18px] h-[18px]"></i></button>
+                           <button onclick="copyModalPassword()" class="text-[#9ca3af] hover:text-[#8ab4f8]"><i data-lucide="copy" class="w-[18px] h-[18px]"></i></button>
+                       </div>
+                   </div>
+                </div>
+                <button onclick="deleteModalEntry()" class="w-full py-2.5 mt-2 rounded-full border border-[#5f6368] text-[#f28b82] font-medium text-sm hover:bg-[#f28b82]/10 transition-colors">
+                    Delete Account
                 </button>
             </div>
 
-            <div class="space-y-4">
-                <div>
-                    <label class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5 block">Website / App</label>
-                    <div class="relative">
-                        <i data-lucide="globe" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
-                        <input id="add-website" type="text" placeholder="e.g. github.com"
-                               class="w-full pl-10 pr-4 py-3 rounded-xl bg-vault-700 border border-white/5 text-white placeholder-slate-500 text-sm">
-                    </div>
-                </div>
-                <div>
-                    <label class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5 block">Username / Email</label>
-                    <div class="relative">
-                        <i data-lucide="user" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
-                        <input id="add-username" type="text" placeholder="e.g. john@example.com"
-                               class="w-full pl-10 pr-4 py-3 rounded-xl bg-vault-700 border border-white/5 text-white placeholder-slate-500 text-sm">
-                    </div>
-                </div>
-                <div>
-                    <label class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5 block">Password</label>
-                    <div class="relative">
-                        <i data-lucide="key-round" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
-                        <input id="add-password" type="text" placeholder="Enter or generate"
-                               class="w-full pl-10 pr-24 py-3 rounded-xl bg-vault-700 border border-white/5 text-white placeholder-slate-500 text-sm font-mono">
-                        <button onclick="generatePassword()"
-                                class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2.5 py-1.5 rounded-lg
-                                       bg-indigo-500/20 text-indigo-300 text-xs font-medium hover:bg-indigo-500/30 transition">
-                            <i data-lucide="zap" class="w-3 h-3"></i> Generate
-                        </button>
-                    </div>
-                </div>
-
-                <!-- TOTP Section -->
-                <div class="border-t border-white/5 pt-4">
-                    <div class="flex items-center justify-between mb-3">
-                        <label class="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                            <i data-lucide="timer" class="w-3.5 h-3.5 text-violet-400"></i>
-                            TOTP Secret (Optional)
-                        </label>
-                        <button onclick="generateTotpSecret()"
-                                class="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-500/20 text-violet-300 text-xs font-medium hover:bg-violet-500/30 transition">
-                            <i data-lucide="refresh-cw" class="w-3 h-3"></i> Auto-Generate
-                        </button>
-                    </div>
-                    <input id="add-totp" type="text" placeholder="Base32 secret (leave empty to skip)"
-                           class="w-full px-4 py-3 rounded-xl bg-vault-700 border border-white/5 text-white placeholder-slate-500 text-sm font-mono">
-                    <p class="text-xs text-slate-500 mt-1.5">Add a TOTP secret to enable 2FA code generation for this account.</p>
-                </div>
-
-                <button onclick="doAddEntry()"
-                        class="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 text-white font-semibold text-sm
-                               hover:from-indigo-400 hover:to-violet-500 transition-all duration-200 shadow-lg shadow-indigo-500/20 mt-2">
-                    <span class="flex items-center justify-center gap-2">
-                        <i data-lucide="save" class="w-4 h-4"></i> Save Entry
-                    </span>
-                </button>
+            <div class="pt-6 flex justify-end gap-3" id="modal-add-actions">
+                <button onclick="closeAddModal()" class="px-5 py-2 rounded-full text-[#8ab4f8] font-medium text-sm hover:bg-blue-500/10">Cancel</button>
+                <button id="modal-btn-save" onclick="doAddEntry()" class="px-5 py-2 rounded-full text-[#8ab4f8] font-medium text-sm hover:bg-blue-500/10">Save</button>
             </div>
         </div>
     </div>
-
-    <!-- ════════════════════════════════════════════════════════════════════ -->
+    
     <!-- MODAL: QR CODE -->
-    <!-- ════════════════════════════════════════════════════════════════════ -->
     <div id="modal-qr" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop" onclick="closeQrModal()">
-        <div class="glass rounded-2xl p-6 w-full max-w-sm fade-in text-center" onclick="event.stopPropagation()">
-            <h2 class="text-lg font-bold text-white mb-2">Scan QR Code</h2>
-            <p id="qr-subtitle" class="text-slate-400 text-sm mb-4"></p>
-            <div class="flex justify-center mb-4">
+        <div class="bg-[#202124] rounded-2xl p-6 w-full max-w-sm fade-in text-center" onclick="event.stopPropagation()">
+            <h2 class="text-lg font-medium text-white mb-2">Scan QR Code</h2>
+            <p id="qr-subtitle" class="text-[#9ca3af] text-sm mb-4"></p>
+            <div class="flex justify-center mb-4 bg-white p-2 rounded-xl inline-block">
                 <img id="qr-image" class="rounded-xl" width="200" height="200" alt="TOTP QR Code">
             </div>
-            <p class="text-xs text-slate-500 mb-4">Scan with Google Authenticator, Authy, or any TOTP app.</p>
-            <button onclick="closeQrModal()"
-                    class="px-6 py-2 rounded-xl bg-vault-600 text-white text-sm hover:bg-vault-500 transition">
-                Close
-            </button>
+            <button onclick="closeQrModal()" class="block w-full py-2 rounded-full text-[#8ab4f8] text-sm mt-2 hover:bg-blue-500/10">Close</button>
         </div>
     </div>
-
 
     <!-- ════════════════════════════════════════════════════════════════════ -->
     <!-- JAVASCRIPT -->
+
     <!-- ════════════════════════════════════════════════════════════════════ -->
     <script>
     // ── State ───────────────────────────────────────────────────────────────
@@ -591,73 +452,31 @@
         }
 
         empty.classList.add('hidden');
+        empty.classList.add('hidden');
         grid.innerHTML = entries.map((entry, i) => {
-            const initial = entry.website.charAt(0).toUpperCase();
-            const hue = (entry.website.charCodeAt(0) * 37) % 360;
             return `
-            <div class="entry-card glass-light rounded-2xl p-5 card-hover" style="animation-delay: ${i * 0.06}s" data-id="${entry.id}">
-                <!-- Header -->
-                <div class="flex items-start justify-between mb-4">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-lg"
-                             style="background: linear-gradient(135deg, hsl(${hue},70%,55%), hsl(${hue+30},60%,45%))">
-                            ${initial}
-                        </div>
-                        <div>
-                            <h3 class="text-white font-semibold text-sm">${escapeHtml(entry.website)}</h3>
-                            <p class="text-slate-400 text-xs">${escapeHtml(entry.username)}</p>
-                        </div>
-                    </div>
-                    <button onclick="deleteEntry(${entry.id}, '${escapeHtml(entry.website)}')"
-                            class="text-slate-500 hover:text-rose-400 transition p-1 rounded-lg hover:bg-rose-500/10">
-                        <i data-lucide="trash-2" class="w-4 h-4"></i>
-                    </button>
+            <div class="flex items-center justify-between py-4 entry-hover w-full cursor-pointer group" onclick="openViewModal(${entry.id}, '${escapeHtml(entry.website)}', '${escapeHtml(entry.username)}')" data-id="${entry.id}">
+                <div class="flex-1 pl-1">
+                    <div class="text-[#9ca3af] text-[14px] mb-1">${escapeHtml(entry.website)} (${escapeHtml(entry.username)})</div>
+                    ${entry.has_totp ? `
+                    <div class="text-[#8ab4f8] text-[34px] tracking-[0.1em] font-sans mt-1" onclick="event.stopPropagation(); copyTotp(${entry.id})" id="totp-code-${entry.id}">------</div>
+                    ` : `
+                    <div class="text-[#5f6368] text-[18px] font-medium tracking-wide mt-2 mb-1">Pass🔑</div>
+                    `}
                 </div>
-
-                <!-- Password row -->
-                <div class="flex items-center gap-2 mb-3">
-                    <div class="flex-1 px-3 py-2 rounded-lg bg-vault-900/60 font-mono text-sm">
-                        <span id="pw-display-${entry.id}" class="text-slate-400">••••••••••••</span>
+                <div class="flex items-center justify-center shrink-0 w-12">
+                    ${entry.has_totp ? `
+                    <div class="relative w-6 h-6 flex items-center justify-center">
+                        <svg class="totp-ring w-[22px] h-[22px] absolute" viewBox="0 0 36 36">
+                            <circle class="totp-ring-bg" cx="18" cy="18" r="16" fill="none" stroke-width="4"/>
+                            <circle id="totp-circle-${entry.id}" class="totp-ring-fg" cx="18" cy="18" r="16" fill="none" stroke-width="4" stroke-linecap="round" stroke-dasharray="100.53" stroke-dashoffset="0"/>
+                        </svg>
+                        <span id="totp-time-${entry.id}" class="hidden">30</span>
                     </div>
-                    <button onclick="togglePassword(${entry.id})" title="Show/Hide"
-                            class="p-2 rounded-lg bg-vault-900/60 text-slate-400 hover:text-indigo-300 hover:bg-indigo-500/10 transition">
-                        <i id="pw-icon-${entry.id}" data-lucide="eye" class="w-4 h-4"></i>
-                    </button>
-                    <button onclick="copyPassword(${entry.id})" title="Copy (auto-clears in 30s)"
-                            class="p-2 rounded-lg bg-vault-900/60 text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition">
-                        <i data-lucide="copy" class="w-4 h-4"></i>
-                    </button>
+                    ` : `
+                    <i data-lucide="chevron-right" class="w-5 h-5 text-[#5f6368]"></i>
+                    `}
                 </div>
-
-                <!-- TOTP section -->
-                ${entry.has_totp ? `
-                <div class="border-t border-white/5 pt-3 mt-1">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-3">
-                            <!-- Circular countdown -->
-                            <div class="relative w-10 h-10">
-                                <svg class="totp-ring w-10 h-10" viewBox="0 0 36 36">
-                                    <circle class="totp-ring-bg" cx="18" cy="18" r="15" fill="none" stroke-width="2.5"/>
-                                    <circle id="totp-circle-${entry.id}" class="totp-ring-fg" cx="18" cy="18" r="15"
-                                            fill="none" stroke-width="2.5" stroke-linecap="round"
-                                            stroke-dasharray="94.25" stroke-dashoffset="0"/>
-                                </svg>
-                                <span id="totp-time-${entry.id}" class="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-slate-300">30</span>
-                            </div>
-                            <span id="totp-code-${entry.id}" class="totp-code font-mono text-2xl font-bold text-indigo-300 tracking-widest">------</span>
-                        </div>
-                        <button onclick="showQr(${entry.id})" title="Show QR Code"
-                                class="p-2 rounded-lg text-slate-400 hover:text-violet-300 hover:bg-violet-500/10 transition">
-                            <i data-lucide="qr-code" class="w-4 h-4"></i>
-                        </button>
-                    </div>
-                </div>` : `
-                <div class="border-t border-white/5 pt-3 mt-1">
-                    <button onclick="promptAddTotp(${entry.id})"
-                            class="flex items-center gap-1.5 text-xs text-slate-500 hover:text-violet-300 transition">
-                        <i data-lucide="plus" class="w-3 h-3"></i> Add 2FA
-                    </button>
-                </div>`}
             </div>`;
         }).join('');
 
@@ -669,7 +488,7 @@
 
     // ── TOTP countdown ───────────────────────────────────────────────────────
     async function startTotp(entryId) {
-        const circumference = 94.25; // 2 * π * 15
+        const circumference = 100.53;
         const circle = document.getElementById(`totp-circle-${entryId}`);
         const timeEl = document.getElementById(`totp-time-${entryId}`);
         const codeEl = document.getElementById(`totp-code-${entryId}`);
@@ -703,69 +522,90 @@
         totpIntervals[entryId] = setInterval(tick, 1000);
     }
 
-    // ── Toggle password visibility ───────────────────────────────────────────
-    const revealed = {};
-    async function togglePassword(id) {
-        const display = document.getElementById(`pw-display-${id}`);
-        const icon = document.getElementById(`pw-icon-${id}`);
-        if (revealed[id]) {
+    // ── Extra Actions ────────────────────────────────────────────────────────
+    async function copyTotp(id) {
+        const codeEl = document.getElementById(`totp-code-${id}`);
+        if (!codeEl || codeEl.textContent === '------') return;
+        const code = codeEl.textContent.replace(/\s+/g, '');
+        try {
+            await navigator.clipboard.writeText(code);
+            toast('TOTP copied!', 'info');
+        } catch { toast('Failed to copy', 'error'); }
+    }
+
+    // ── Add/View modals logic ────────────────────────────────────────────────
+    function openAddModal() {
+        document.getElementById('modal-add').classList.remove('hidden');
+        document.getElementById('modal-add-form').classList.remove('hidden');
+        document.getElementById('modal-view-form').classList.add('hidden');
+        document.getElementById('modal-btn-save').classList.remove('hidden');
+        document.getElementById('modal-add-title').textContent = 'Add details';
+        
+        document.getElementById('add-website').value = '';
+        document.getElementById('add-username').value = '';
+        document.getElementById('add-password').value = '';
+        document.getElementById('add-totp').value = '';
+        document.getElementById('add-website').focus();
+    }
+    
+    async function openViewModal(id, website, username) {
+        document.getElementById('modal-add').classList.remove('hidden');
+        document.getElementById('modal-add-form').classList.add('hidden');
+        document.getElementById('modal-view-form').classList.remove('hidden');
+        document.getElementById('modal-btn-save').classList.add('hidden');
+        document.getElementById('modal-add-title').textContent = 'Account Info';
+        
+        document.getElementById('view-id').value = id;
+        document.getElementById('view-website').textContent = website;
+        document.getElementById('view-username').textContent = username;
+        document.getElementById('view-password').textContent = '••••••••••••';
+        document.getElementById('modal-pw-icon').setAttribute('data-lucide', 'eye');
+        lucide.createIcons();
+    }
+    
+    function closeAddModal() { 
+        document.getElementById('modal-add').classList.add('hidden'); 
+    }
+
+    async function toggleModalPassword() {
+        const id = document.getElementById('view-id').value;
+        const display = document.getElementById('view-password');
+        const icon = document.getElementById('modal-pw-icon');
+        
+        if (display.textContent !== '••••••••••••') {
             display.textContent = '••••••••••••';
-            display.classList.add('text-slate-400');
-            display.classList.remove('text-white');
             icon.setAttribute('data-lucide', 'eye');
-            revealed[id] = false;
         } else {
             try {
                 const data = await api('GET', `/api/entries/${id}/password`);
                 display.textContent = data.password;
-                display.classList.remove('text-slate-400');
-                display.classList.add('text-white');
                 icon.setAttribute('data-lucide', 'eye-off');
-                revealed[id] = true;
             } catch (e) { toast(e.message, 'error'); }
         }
         lucide.createIcons();
     }
 
-    // ── Copy password ────────────────────────────────────────────────────────
-    async function copyPassword(id) {
+    async function copyModalPassword() {
+        const id = document.getElementById('view-id').value;
         try {
             const data = await api('GET', `/api/entries/${id}/password`);
             await navigator.clipboard.writeText(data.password);
-            toast('Password copied! Auto-clears in 30s', 'info');
-
-            // Auto-clear clipboard after 30 seconds
-            if (clipboardTimeout) clearTimeout(clipboardTimeout);
-            clipboardTimeout = setTimeout(async () => {
-                try {
-                    await navigator.clipboard.writeText('');
-                    toast('Clipboard cleared for security', 'info');
-                } catch {}
-            }, 30000);
+            toast('Password copied!', 'success');
         } catch (e) { toast(e.message, 'error'); }
     }
-
-    // ── Delete entry ─────────────────────────────────────────────────────────
-    async function deleteEntry(id, name) {
-        if (!confirm(`Delete credentials for "${name}"?`)) return;
+    
+    async function deleteModalEntry() {
+        const id = document.getElementById('view-id').value;
+        if (!confirm('Are you sure you want to delete this account?')) return;
         try {
             await api('DELETE', `/api/entries/${id}`);
-            toast('Entry deleted', 'success');
+            toast('Account deleted', 'success');
+            closeAddModal();
             loadEntries();
         } catch (e) { toast(e.message, 'error'); }
     }
 
-    // ── Add entry modal ──────────────────────────────────────────────────────
-    function openAddModal() {
-        document.getElementById('modal-add').classList.remove('hidden');
-        document.getElementById('add-website').value = '';
-        document.getElementById('add-username').value = '';
-        document.getElementById('add-password').value = '';
-        document.getElementById('add-totp').value = '';
-        lucide.createIcons();
-        document.getElementById('add-website').focus();
-    }
-    function closeAddModal() { document.getElementById('modal-add').classList.add('hidden'); }
+
 
     async function doAddEntry() {
         const website = document.getElementById('add-website').value.trim();

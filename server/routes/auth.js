@@ -406,21 +406,25 @@ router.post('/reset-complete-recover', async (req, res) => {
 
       // 2. Insert new re-encrypted credentials
       const insertText = `
-        INSERT INTO credentials (user_id, site_name, url, username, password, category, notes, last_changed_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO credentials (user_id, site_name, url, username, ciphertext, iv, kdf_salt, enc_algo, enc_version, category, notes, last_changed_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       `;
 
       for (const item of credentials) {
         const siteName = item.site_name || item.siteName;
         const url = item.url;
         const username = item.username;
-        const password = item.password;
+        const ciphertext = item.ciphertext;
+        const iv = item.iv;
+        const kdfSalt = item.kdf_salt || item.kdfSalt;
+        const encAlgo = item.enc_algo || item.encAlgo;
+        const encVersion = item.enc_version || item.encVersion;
         const category = item.category;
         const notes = item.notes;
         const lastChangedAt = item.last_changed_at || item.lastChangedAt || new Date().toISOString();
 
-        if (!siteName || !username || !password) {
-          throw new Error('Invalid item. siteName, username, and password are required.');
+        if (!siteName || !username || !ciphertext || !iv || !kdfSalt || !encAlgo || !encVersion) {
+          throw new Error('Invalid item. siteName, username, ciphertext, iv, kdfSalt, encAlgo, encVersion are required.');
         }
 
         await client.query(insertText, [
@@ -428,7 +432,11 @@ router.post('/reset-complete-recover', async (req, res) => {
           siteName,
           url || '',
           username,
-          password,
+          ciphertext,
+          iv,
+          kdfSalt,
+          encAlgo,
+          encVersion,
           category || 'Other',
           notes || '',
           lastChangedAt

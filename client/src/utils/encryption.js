@@ -72,3 +72,109 @@ export function decryptData(ciphertext, key) {
 export function generateRandomSalt() {
   return CryptoJS.lib.WordArray.random(16).toString(CryptoJS.enc.Hex);
 }
+
+/**
+ * Gets the SubtleCrypto instance depending on browser or Node.js environment.
+ */
+async function getSubtleCrypto() {
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
+    return window.crypto.subtle;
+  }
+  const cryptoModule = await import(/* @vite-ignore */ 'crypto');
+  return cryptoModule.webcrypto.subtle;
+}
+
+/**
+ * Encrypts a password using AES-GCM via Web Crypto API.
+ * @param {string} plaintext Password plaintext
+ * @param {string} hexKey Hex-encoded master encryption key
+ * @param {string} kdfSalt Hex-encoded salt used for derivation
+ * @returns {Promise<{ciphertext: string, iv: string, kdf_salt: string, enc_algo: string, enc_version: string}>}
+ */
+export async function encryptPassword(plaintext, hexKey, kdfSalt) {
+  if (!plaintext) {
+    return { ciphertext: '', iv: '', kdf_salt: '', enc_algo: 'AES-GCM', enc_version: '1' };
+  }
+  
+  const subtle = await getSubtleCrypto();
+  
+  // Convert hex key to Uint8Array
+  const keyBuffer = new Uint8Array(hexKey.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+  
+  // Import the key as a CryptoKey for AES-GCM
+  const cryptoKey = await subtle.importKey(
+    'raw',
+    keyBuffer,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt']
+  );
+
+  // Generate a 12-byte initialization vector (IV) for AES-GCM
+  const iv = (typeof window !== 'undefined' ? window.crypto : (await import(/* @vite-ignore */ 'crypto')).webcrypto).getRandomValues(new Uint8Array(12));
+  
+  const encoder = new TextEncoder();
+  const encryptedBuffer = await subtle.encrypt(
+    {
+      name: 'AES-GCM',
+      iv: iv
+    },
+    cryptoKey,
+    encoder.encode(plaintext)
+  );
+
+  // Convert array buffer to base64
+  const ciphertextBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedBuffer)));
+  const ivHex = Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join('');
+
+  return {
+    ciphertext: ciphertextBase64,
+    iv: ivHex,
+    kdf_salt: kdfSalt || '',
+    enc_algo: 'AES-GCM',
+    enc_version: '1'
+  };
+}
+
+/**
+ * Decrypts a password using AES-GCM via Web Crypto API.
+ * @param {string} ciphertext Base64 encoded ciphertext
+ * @param {string} hexKey Hex-encoded master encryption key
+ * @param {string} ivHex Hex-encoded initialization vector
+ * @returns {Promise<string>} Plaintext password
+ */
+export async function decryptPassword(ciphertext, hexKey, ivHex) {
+  if (!ciphertext || !ivHex) return '';
+  try {
+    const subtle = await getSubtleCrypto();
+    const keyBuffer = new Uint8Array(hexKey.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+    const cryptoKey = await subtle.importKey(
+      'raw',
+      keyBuffer,
+      { name: 'AES-GCM' },
+      false,
+      ['decrypt']
+    );
+
+    const iv = new Uint8Array(ivHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+    const encryptedBuffer = new Uint8Array(
+      atob(ciphertext).split('').map(char => char.charCodeAt(0))
+    );
+
+    const decryptedBuffer = await subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv: iv
+      },
+      cryptoKey,
+      encryptedBuffer
+    );
+
+    const decoder = new TextDecoder();
+    return decoder.decode(decryptedBuffer);
+  } catch (error) {
+    console.error('Password decryption failed:', error);
+    return '';
+  }
+}
+

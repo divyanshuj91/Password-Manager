@@ -1,14 +1,14 @@
 import React, { createContext, useState, useEffect, useContext, useRef } from 'react';
 import api from '../utils/api.js';
 import { useAuth } from './AuthContext.jsx';
-import { encryptData, decryptData } from '../utils/encryption.js';
+import { encryptData, decryptData, encryptPassword, decryptPassword } from '../utils/encryption.js';
 import { analyzePassword } from '../utils/passwordStrength.js';
 import CryptoJS from 'crypto-js';
 
 const VaultContext = createContext(null);
 
 export function VaultProvider({ children }) {
-  const { user, encryptionKey, isLocked } = useAuth();
+  const { user, encryptionKey, salt, isLocked } = useAuth();
   const [credentials, setCredentials] = useState([]);
   const [isVaultLoading, setIsVaultLoading] = useState(false);
   const [activities, setActivities] = useState([]);
@@ -73,20 +73,21 @@ export function VaultProvider({ children }) {
       const encryptedDataList = res.data;
 
       // Decrypt credentials
-      const decrypted = encryptedDataList.map((item) => {
+      const decrypted = await Promise.all(encryptedDataList.map(async (item) => {
+        const decryptedPass = await decryptPassword(item.ciphertext, encryptionKey, item.iv);
         return {
           id: item.id,
           siteName: decryptData(item.site_name, encryptionKey),
           url: decryptData(item.url, encryptionKey),
           username: decryptData(item.username, encryptionKey),
-          password: decryptData(item.password, encryptionKey),
+          password: decryptedPass,
           category: decryptData(item.category, encryptionKey),
           notes: decryptData(item.notes, encryptionKey),
           lastChangedAt: item.last_changed_at || item.created_at,
           createdAt: item.created_at,
           updatedAt: item.updated_at
         };
-      });
+      }));
 
       setCredentials(decrypted);
     } catch (error) {
@@ -102,11 +103,17 @@ export function VaultProvider({ children }) {
   const addCredential = async (item) => {
     if (!encryptionKey) throw new Error('Vault is locked.');
 
+    const encPass = await encryptPassword(item.password, encryptionKey, salt);
+
     const encrypted = {
       siteName: encryptData(item.siteName, encryptionKey),
       url: item.url ? encryptData(item.url, encryptionKey) : '',
       username: encryptData(item.username, encryptionKey),
-      password: encryptData(item.password, encryptionKey),
+      ciphertext: encPass.ciphertext,
+      iv: encPass.iv,
+      kdfSalt: encPass.kdf_salt,
+      encAlgo: encPass.enc_algo,
+      encVersion: encPass.enc_version,
       category: item.category ? encryptData(item.category, encryptionKey) : 'Other',
       notes: item.notes ? encryptData(item.notes, encryptionKey) : '',
       lastChangedAt: new Date().toISOString()
@@ -127,11 +134,17 @@ export function VaultProvider({ children }) {
   const updateCredential = async (id, item) => {
     if (!encryptionKey) throw new Error('Vault is locked.');
 
+    const encPass = await encryptPassword(item.password, encryptionKey, salt);
+
     const encrypted = {
       siteName: encryptData(item.siteName, encryptionKey),
       url: item.url ? encryptData(item.url, encryptionKey) : '',
       username: encryptData(item.username, encryptionKey),
-      password: encryptData(item.password, encryptionKey),
+      ciphertext: encPass.ciphertext,
+      iv: encPass.iv,
+      kdfSalt: encPass.kdf_salt,
+      encAlgo: encPass.enc_algo,
+      encVersion: encPass.enc_version,
       category: item.category ? encryptData(item.category, encryptionKey) : 'Other',
       notes: item.notes ? encryptData(item.notes, encryptionKey) : '',
       lastChangedAt: new Date().toISOString()
@@ -161,17 +174,22 @@ export function VaultProvider({ children }) {
   const importCredentials = async (items) => {
     if (!encryptionKey) throw new Error('Vault is locked.');
 
-    const encryptedItems = items.map(item => {
+    const encryptedItems = await Promise.all(items.map(async (item) => {
+      const encPass = await encryptPassword(item.password, encryptionKey, salt);
       return {
         siteName: encryptData(item.siteName || item.site_name, encryptionKey),
         url: item.url ? encryptData(item.url, encryptionKey) : '',
         username: encryptData(item.username, encryptionKey),
-        password: encryptData(item.password, encryptionKey),
+        ciphertext: encPass.ciphertext,
+        iv: encPass.iv,
+        kdf_salt: encPass.kdf_salt,
+        enc_algo: encPass.enc_algo,
+        enc_version: encPass.enc_version,
         category: encryptData(item.category || 'Other', encryptionKey),
         notes: item.notes ? encryptData(item.notes, encryptionKey) : '',
         lastChangedAt: new Date().toISOString()
       };
-    });
+    }));
 
     await api.post('/passwords/sync', { credentials: encryptedItems });
     await fetchVault();

@@ -129,7 +129,11 @@ export async function initDatabase() {
         site_name VARCHAR(255) NOT NULL,
         url VARCHAR(255),
         username VARCHAR(255) NOT NULL,
-        password VARCHAR(255) NOT NULL,
+        ciphertext TEXT NOT NULL,
+        iv VARCHAR(255) NOT NULL,
+        kdf_salt VARCHAR(255) NOT NULL,
+        enc_algo VARCHAR(50) NOT NULL,
+        enc_version VARCHAR(10) NOT NULL,
         category VARCHAR(100),
         notes TEXT,
         last_changed_at VARCHAR(255) NOT NULL,
@@ -138,6 +142,18 @@ export async function initDatabase() {
         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
       )
     `);
+
+    // Run column migrations for credentials table
+    try {
+      await query(`ALTER TABLE credentials ADD COLUMN IF NOT EXISTS ciphertext TEXT`);
+      await query(`ALTER TABLE credentials ADD COLUMN IF NOT EXISTS iv VARCHAR(255)`);
+      await query(`ALTER TABLE credentials ADD COLUMN IF NOT EXISTS kdf_salt VARCHAR(255)`);
+      await query(`ALTER TABLE credentials ADD COLUMN IF NOT EXISTS enc_algo VARCHAR(50)`);
+      await query(`ALTER TABLE credentials ADD COLUMN IF NOT EXISTS enc_version VARCHAR(10)`);
+      await query(`ALTER TABLE credentials DROP COLUMN IF EXISTS password`);
+    } catch (e) {
+      console.warn('Migration warning: could not alter credentials columns', e.message);
+    }
     console.log('PostgreSQL database tables verified/created successfully.');
   } else {
     // Create Users Table (SQLite format)
@@ -183,7 +199,11 @@ export async function initDatabase() {
         site_name TEXT NOT NULL,
         url TEXT,
         username TEXT NOT NULL,
-        password TEXT NOT NULL,
+        ciphertext TEXT NOT NULL,
+        iv TEXT NOT NULL,
+        kdf_salt TEXT NOT NULL,
+        enc_algo TEXT NOT NULL,
+        enc_version TEXT NOT NULL,
         category TEXT,
         notes TEXT,
         last_changed_at TEXT NOT NULL,
@@ -192,6 +212,26 @@ export async function initDatabase() {
         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
       )
     `).run();
+
+    // Run column migrations for credentials table
+    try {
+      sqliteDb.prepare('ALTER TABLE credentials ADD COLUMN ciphertext TEXT').run();
+    } catch (e) {}
+    try {
+      sqliteDb.prepare('ALTER TABLE credentials ADD COLUMN iv TEXT').run();
+    } catch (e) {}
+    try {
+      sqliteDb.prepare('ALTER TABLE credentials ADD COLUMN kdf_salt TEXT').run();
+    } catch (e) {}
+    try {
+      sqliteDb.prepare('ALTER TABLE credentials ADD COLUMN enc_algo TEXT').run();
+    } catch (e) {}
+    try {
+      sqliteDb.prepare('ALTER TABLE credentials ADD COLUMN enc_version TEXT').run();
+    } catch (e) {}
+    try {
+      sqliteDb.prepare('ALTER TABLE credentials DROP COLUMN password').run();
+    } catch (e) {}
     console.log('SQLite database tables verified/created successfully.');
   }
 }

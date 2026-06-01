@@ -13,7 +13,7 @@ router.get('/', authMiddleware, async (req, res) => {
 
   try {
     const result = await db.query(`
-      SELECT id, site_name, url, username, password, category, notes, last_changed_at, created_at, updated_at
+      SELECT id, site_name, url, username, ciphertext, iv, kdf_salt, enc_algo, enc_version, category, notes, last_changed_at, created_at, updated_at
       FROM credentials
       WHERE user_id = $1
       ORDER BY site_name ASC
@@ -25,7 +25,11 @@ router.get('/', authMiddleware, async (req, res) => {
       site_name: row.site_name,
       url: row.url,
       username: row.username,
-      password: row.password,
+      ciphertext: row.ciphertext,
+      iv: row.iv,
+      kdf_salt: row.kdf_salt,
+      enc_algo: row.enc_algo,
+      enc_version: row.enc_version,
       category: row.category,
       notes: row.notes,
       last_changed_at: row.last_changed_at,
@@ -46,20 +50,20 @@ router.get('/', authMiddleware, async (req, res) => {
  */
 router.post('/', authMiddleware, async (req, res) => {
   const userId = req.user.id;
-  const { siteName, url, username, password, category, notes, lastChangedAt } = req.body;
+  const { siteName, url, username, ciphertext, iv, kdfSalt, encAlgo, encVersion, category, notes, lastChangedAt } = req.body;
 
-  if (!siteName || !username || !password) {
-    return res.status(400).json({ error: 'Site name, username, and password are required.' });
+  if (!siteName || !username || !ciphertext || !iv || !kdfSalt || !encAlgo || !encVersion) {
+    return res.status(400).json({ error: 'Required fields missing: siteName, username, ciphertext, iv, kdfSalt, encAlgo, encVersion.' });
   }
 
   const changeTime = lastChangedAt || new Date().toISOString();
 
   try {
     const result = await db.query(`
-      INSERT INTO credentials (user_id, site_name, url, username, password, category, notes, last_changed_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+      INSERT INTO credentials (user_id, site_name, url, username, ciphertext, iv, kdf_salt, enc_algo, enc_version, category, notes, last_changed_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
       RETURNING id
-    `, [userId, siteName, url || '', username, password, category || '', notes || '', changeTime]);
+    `, [userId, siteName, url || '', username, ciphertext, iv, kdfSalt, encAlgo, encVersion, category || '', notes || '', changeTime]);
 
     return res.status(201).json({
       id: result.rows[0].id,
@@ -78,10 +82,10 @@ router.post('/', authMiddleware, async (req, res) => {
 router.put('/:id', authMiddleware, async (req, res) => {
   const userId = req.user.id;
   const { id } = req.params;
-  const { siteName, url, username, password, category, notes, lastChangedAt } = req.body;
+  const { siteName, url, username, ciphertext, iv, kdfSalt, encAlgo, encVersion, category, notes, lastChangedAt } = req.body;
 
-  if (!siteName || !username || !password) {
-    return res.status(400).json({ error: 'Site name, username, and password are required.' });
+  if (!siteName || !username || !ciphertext || !iv || !kdfSalt || !encAlgo || !encVersion) {
+    return res.status(400).json({ error: 'Required fields missing: siteName, username, ciphertext, iv, kdfSalt, encAlgo, encVersion.' });
   }
 
   const changeTime = lastChangedAt || new Date().toISOString();
@@ -95,9 +99,9 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
     await db.query(`
       UPDATE credentials
-      SET site_name = $1, url = $2, username = $3, password = $4, category = $5, notes = $6, last_changed_at = $7, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $8 AND user_id = $9
-    `, [siteName, url || '', username, password, category || '', notes || '', changeTime, id, userId]);
+      SET site_name = $1, url = $2, username = $3, ciphertext = $4, iv = $5, kdf_salt = $6, enc_algo = $7, enc_version = $8, category = $9, notes = $10, last_changed_at = $11, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $12 AND user_id = $13
+    `, [siteName, url || '', username, ciphertext, iv, kdfSalt, encAlgo, encVersion, category || '', notes || '', changeTime, id, userId]);
 
     return res.json({ message: 'Credential updated successfully.' });
   } catch (error) {
@@ -152,21 +156,25 @@ router.post('/sync', authMiddleware, async (req, res) => {
 
     // 2. Insert all new items
     const insertText = `
-      INSERT INTO credentials (user_id, site_name, url, username, password, category, notes, last_changed_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO credentials (user_id, site_name, url, username, ciphertext, iv, kdf_salt, enc_algo, enc_version, category, notes, last_changed_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     `;
 
     for (const item of credentials) {
       const siteName = item.site_name || item.siteName;
       const url = item.url;
       const username = item.username;
-      const password = item.password;
+      const ciphertext = item.ciphertext;
+      const iv = item.iv;
+      const kdfSalt = item.kdf_salt || item.kdfSalt;
+      const encAlgo = item.enc_algo || item.encAlgo;
+      const encVersion = item.enc_version || item.encVersion;
       const category = item.category;
       const notes = item.notes;
       const lastChangedAt = item.last_changed_at || item.lastChangedAt || new Date().toISOString();
 
-      if (!siteName || !username || !password) {
-        throw new Error('Invalid item. siteName, username, and password are required.');
+      if (!siteName || !username || !ciphertext || !iv || !kdfSalt || !encAlgo || !encVersion) {
+        throw new Error('Invalid item. siteName, username, ciphertext, iv, kdfSalt, encAlgo, encVersion are required.');
       }
 
       await client.query(insertText, [
@@ -174,7 +182,11 @@ router.post('/sync', authMiddleware, async (req, res) => {
         siteName, 
         url || '', 
         username, 
-        password, 
+        ciphertext,
+        iv,
+        kdfSalt,
+        encAlgo,
+        encVersion,
         category || 'Other', 
         notes || '', 
         lastChangedAt

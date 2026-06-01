@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import api from '../utils/api.js';
-import { deriveKeyAndHash, generateRandomSalt } from '../utils/encryption.js';
+import { deriveKeyAndHash, generateRandomSalt, encryptPassword, decryptPassword } from '../utils/encryption.js';
 
 const AuthContext = createContext(null);
 
@@ -8,6 +8,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token') || null);
   const [encryptionKey, setEncryptionKey] = useState(null); // In-memory ONLY
+  const [salt, setSalt] = useState(null); // In-memory ONLY
   const [isLocked, setIsLocked] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -69,6 +70,7 @@ export function AuthProvider({ children }) {
   const register = async (email, masterPassword) => {
     const salt = generateRandomSalt();
     const { encryptionKey, authHash } = deriveKeyAndHash(masterPassword, salt);
+    setSalt(salt);
 
     // 1. Generate a random 32-character recovery key (formatted as VM-XXXX-XXXX-XXXX-XXXX)
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -132,6 +134,7 @@ export function AuthProvider({ children }) {
     setToken(jwtToken);
     setUser(userData);
     setEncryptionKey(derivedKey);
+    setSalt(salt);
     setIsLocked(false);
 
     return { userData };
@@ -157,6 +160,7 @@ export function AuthProvider({ children }) {
       });
 
       setEncryptionKey(derivedKey);
+      setSalt(salt);
       setIsLocked(false);
       return true;
     } catch (error) {
@@ -170,6 +174,7 @@ export function AuthProvider({ children }) {
    */
   const lock = () => {
     setEncryptionKey(null);
+    setSalt(null);
     setIsLocked(true);
   };
 
@@ -181,6 +186,7 @@ export function AuthProvider({ children }) {
     setToken(null);
     setUser(null);
     setEncryptionKey(null);
+    setSalt(null);
     setIsLocked(true);
   };
 
@@ -211,23 +217,29 @@ export function AuthProvider({ children }) {
     // 5. Re-encrypt all items using the new key and prepare sync request
     // Note: decryptedCredentials must be passed in as argument (or retrieved from VaultContext)
     const CryptoJS = await import('crypto-js');
-    const reEncrypted = decryptedCredentials.map(item => {
+    const reEncrypted = await Promise.all(decryptedCredentials.map(async (item) => {
+      const encPass = await encryptPassword(item.password, newKey, newSalt);
       return {
         siteName: CryptoJS.default.AES.encrypt(item.siteName, newKey).toString(),
         url: item.url ? CryptoJS.default.AES.encrypt(item.url, newKey).toString() : '',
         username: CryptoJS.default.AES.encrypt(item.username, newKey).toString(),
-        password: CryptoJS.default.AES.encrypt(item.password, newKey).toString(),
+        ciphertext: encPass.ciphertext,
+        iv: encPass.iv,
+        kdf_salt: encPass.kdf_salt,
+        enc_algo: encPass.enc_algo,
+        enc_version: encPass.enc_version,
         category: item.category ? CryptoJS.default.AES.encrypt(item.category, newKey).toString() : '',
         notes: item.notes ? CryptoJS.default.AES.encrypt(item.notes, newKey).toString() : '',
         lastChangedAt: new Date().toISOString()
       };
-    });
+    }));
 
     // 6. Bulk sync the newly encrypted credentials
     await api.post('/passwords/sync', { credentials: reEncrypted });
 
-    // 7. Update active key
+    // 7. Update active key and salt
     setEncryptionKey(newKey);
+    setSalt(newSalt);
     
     return true;
   };
@@ -320,35 +332,41 @@ export function AuthProvider({ children }) {
     }
 
     // 5. Decrypt all credentials using the original master key
-    const { decryptData, encryptData } = await import('../utils/encryption.js');
-    const decryptedCredentials = credentials.map(item => {
+    const { decryptData, encryptData, decryptPassword, encryptPassword } = await import('../utils/encryption.js');
+    const decryptedCredentials = await Promise.all(credentials.map(async (item) => {
+      const decryptedPass = await decryptPassword(item.ciphertext, originalEncryptionKey, item.iv);
       return {
         siteName: decryptData(item.site_name, originalEncryptionKey),
         url: decryptData(item.url, originalEncryptionKey),
         username: decryptData(item.username, originalEncryptionKey),
-        password: decryptData(item.password, originalEncryptionKey),
+        password: decryptedPass,
         category: decryptData(item.category, originalEncryptionKey),
         notes: decryptData(item.notes, originalEncryptionKey),
         last_changed_at: item.last_changed_at || item.created_at
       };
-    });
+    }));
 
     // 6. Derive new keys and authHash from new master password
     const newSalt = generateRandomSalt();
     const { authHash: newAuthHash, encryptionKey: newEncryptionKey } = deriveKeyAndHash(newMasterPassword, newSalt);
 
     // 7. Re-encrypt all credentials using the new master key
-    const reEncryptedCredentials = decryptedCredentials.map(item => {
+    const reEncryptedCredentials = await Promise.all(decryptedCredentials.map(async (item) => {
+      const encPass = await encryptPassword(item.password, newEncryptionKey, newSalt);
       return {
         siteName: encryptData(item.siteName, newEncryptionKey),
         url: item.url ? encryptData(item.url, newEncryptionKey) : '',
         username: encryptData(item.username, newEncryptionKey),
-        password: encryptData(item.password, newEncryptionKey),
+        ciphertext: encPass.ciphertext,
+        iv: encPass.iv,
+        kdf_salt: encPass.kdf_salt,
+        enc_algo: encPass.enc_algo,
+        enc_version: encPass.enc_version,
         category: item.category ? encryptData(item.category, newEncryptionKey) : 'Other',
         notes: item.notes ? encryptData(item.notes, newEncryptionKey) : '',
         last_changed_at: item.last_changed_at
       };
-    });
+    }));
 
     // 8. Re-encrypt the new master encryption key using recovery key (so recovery continues to work)
     const newEncryptedMasterKey = CryptoJS.default.AES.encrypt(newEncryptionKey, recoveryEncryptionKeyHex).toString();
@@ -375,6 +393,7 @@ export function AuthProvider({ children }) {
       user,
       token,
       encryptionKey,
+      salt,
       isLocked,
       isLoading,
       themeColor,

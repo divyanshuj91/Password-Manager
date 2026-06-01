@@ -1,13 +1,11 @@
-import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-
-dotenv.config();
+import { DATABASE_URL, DB_PATH } from '../config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const connectionString = process.env.DATABASE_URL;
+const connectionString = DATABASE_URL;
 
 let pool = null;
 let sqliteDb = null;
@@ -28,7 +26,7 @@ if (connectionString) {
   isPostgres = false;
   console.log('DATABASE_URL is not defined. Connecting to SQLite fallback...');
   const { default: Database } = await import('better-sqlite3');
-  const dbPath = process.env.DB_PATH || 'vault.db';
+  const dbPath = DB_PATH;
   const resolvedDbPath = path.isAbsolute(dbPath) 
     ? dbPath 
     : path.resolve(__dirname, '..', dbPath);
@@ -95,7 +93,31 @@ export async function initDatabase() {
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
         salt VARCHAR(255) NOT NULL,
+        recovery_hash VARCHAR(255),
+        encrypted_master_key TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Run column migrations for existing databases
+    try {
+      await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS recovery_hash VARCHAR(255)`);
+    } catch (e) {
+      console.warn('Migration warning: could not add recovery_hash', e.message);
+    }
+    try {
+      await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS encrypted_master_key TEXT`);
+    } catch (e) {
+      console.warn('Migration warning: could not add encrypted_master_key', e.message);
+    }
+
+    // Create Verification Codes Table (PostgreSQL format)
+    await query(`
+      CREATE TABLE IF NOT EXISTS verification_codes (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) NOT NULL,
+        code VARCHAR(10) NOT NULL,
+        expires_at TIMESTAMP NOT NULL
       )
     `);
 
@@ -125,7 +147,31 @@ export async function initDatabase() {
         email TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
         salt TEXT NOT NULL,
+        recovery_hash TEXT,
+        encrypted_master_key TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run();
+
+    // Run column migrations for existing SQLite databases
+    try {
+      sqliteDb.prepare('ALTER TABLE users ADD COLUMN recovery_hash TEXT').run();
+    } catch (e) {
+      // Column already exists
+    }
+    try {
+      sqliteDb.prepare('ALTER TABLE users ADD COLUMN encrypted_master_key TEXT').run();
+    } catch (e) {
+      // Column already exists
+    }
+
+    // Create Verification Codes Table (SQLite format)
+    sqliteDb.prepare(`
+      CREATE TABLE IF NOT EXISTS verification_codes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL,
+        code TEXT NOT NULL,
+        expires_at DATETIME NOT NULL
       )
     `).run();
 

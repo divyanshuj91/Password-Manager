@@ -4,9 +4,9 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import db from '../models/database.js';
 import { authMiddleware } from '../middleware/authMiddleware.js';
+import { JWT_SECRET } from '../config.js';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_session_key_for_vaultme';
 
 // Helper to generate a deterministic salt for non-existing users to prevent user enumeration
 function getMockSalt(email) {
@@ -51,7 +51,7 @@ router.get('/salt', async (req, res) => {
  * Registers a new user.
  */
 router.post('/register', async (req, res) => {
-  const { email, authHash, salt } = req.body;
+  const { email, authHash, salt, recoveryHash, encryptedMasterKey } = req.body;
 
   if (!email || !authHash || !salt) {
     return res.status(400).json({ error: 'Email, authHash, and salt are required.' });
@@ -70,10 +70,13 @@ router.post('/register', async (req, res) => {
     // Bcrypt hash the client-side derived authHash
     const passwordHash = await bcrypt.hash(authHash, 10);
 
+    // Bcrypt hash the recovery hash if provided
+    const hashedRecoveryHash = recoveryHash ? await bcrypt.hash(recoveryHash, 10) : null;
+
     // Insert user into DB and return the generated ID
     const insertRes = await db.query(
-      'INSERT INTO users (email, password_hash, salt) VALUES ($1, $2, $3) RETURNING id',
-      [normalizedEmail, passwordHash, salt]
+      'INSERT INTO users (email, password_hash, salt, recovery_hash, encrypted_master_key) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [normalizedEmail, passwordHash, salt, hashedRecoveryHash, encryptedMasterKey || null]
     );
 
     return res.status(201).json({ 
@@ -204,6 +207,293 @@ router.delete('/delete-account', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Delete account error:', error);
     return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+/**
+ * POST /api/auth/reset-request
+ * Generates and stores a 6-digit verification code.
+ */
+router.post('/reset-request', async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: 'Email parameter is required.' });
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+
+  try {
+    const userRes = await db.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
+    const user = userRes.rows[0];
+
+    // Always return success to prevent user enumeration
+    if (user) {
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = new Date(Date.now() + 15 * 60000).toISOString(); // 15 mins expiry
+
+      // Store in DB (delete older codes first)
+      await db.query('DELETE FROM verification_codes WHERE email = $1', [normalizedEmail]);
+      await db.query(
+        'INSERT INTO verification_codes (email, code, expires_at) VALUES ($1, $2, $3)',
+        [normalizedEmail, code, expiresAt]
+      );
+
+      // Simulate email log
+      console.log(`\n===============================================`);
+      console.log(`  [SIMULATED EMAIL] Password Reset Verification Code`);
+      console.log(`  To: ${normalizedEmail}`);
+      console.log(`  Code: ${code}`);
+      console.log(`  Expires at: ${expiresAt}`);
+      console.log(`===============================================\n`);
+    }
+
+    return res.json({ message: 'If the email exists, a verification code has been sent.' });
+  } catch (error) {
+    console.error('Reset request error:', error);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+/**
+ * POST /api/auth/reset-verify
+ * Verifies the 6-digit code and returns a temporary JWT reset token.
+ */
+router.post('/reset-verify', async (req, res) => {
+  const { email, code } = req.body;
+
+  if (!email || !code) {
+    return res.status(400).json({ error: 'Email and verification code are required.' });
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+
+  try {
+    const now = new Date().toISOString();
+    const verifyRes = await db.query(
+      'SELECT * FROM verification_codes WHERE email = $1 AND code = $2 AND expires_at > $3',
+      [normalizedEmail, code, now]
+    );
+
+    const record = verifyRes.rows[0];
+
+    if (!record) {
+      return res.status(400).json({ error: 'Invalid or expired verification code.' });
+    }
+
+    // Delete verification codes for this email
+    await db.query('DELETE FROM verification_codes WHERE email = $1', [normalizedEmail]);
+
+    // Sign a temporary reset token (valid for 15 minutes)
+    const resetToken = jwt.sign(
+      { email: normalizedEmail, purpose: 'reset-password' },
+      JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    return res.json({ resetToken });
+  } catch (error) {
+    console.error('Reset verify error:', error);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+/**
+ * POST /api/auth/reset-complete-destructive
+ * Wipes the user's vault completely and saves a new master password.
+ */
+router.post('/reset-complete-destructive', async (req, res) => {
+  const { email, resetToken, newAuthHash, newSalt } = req.body;
+
+  if (!email || !resetToken || !newAuthHash || !newSalt) {
+    return res.status(400).json({ error: 'All fields are required.' });
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+
+  try {
+    // Verify reset token
+    const decoded = jwt.verify(resetToken, JWT_SECRET);
+    if (decoded.email !== normalizedEmail || decoded.purpose !== 'reset-password') {
+      return res.status(400).json({ error: 'Invalid or expired password reset token.' });
+    }
+
+    // Hash the new authHash
+    const newPasswordHash = await bcrypt.hash(newAuthHash, 10);
+
+    const userRes = await db.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
+    const userId = userRes.rows[0]?.id;
+
+    if (!userId) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // 1. Wipe all existing credentials
+      await client.query('DELETE FROM credentials WHERE user_id = $1', [userId]);
+
+      // 2. Update user credentials and remove recovery key references
+      await client.query(
+        'UPDATE users SET password_hash = $1, salt = $2, recovery_hash = NULL, encrypted_master_key = NULL WHERE id = $3',
+        [newPasswordHash, newSalt, userId]
+      );
+
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+
+    return res.json({ message: 'Vault wiped and master password reset successfully.' });
+  } catch (error) {
+    console.error('Destructive reset error:', error);
+    return res.status(500).json({ error: 'Internal server error or token expired.' });
+  }
+});
+
+/**
+ * POST /api/auth/reset-complete-recover
+ * Restores vault using Recovery Key and saves a new master password.
+ */
+router.post('/reset-complete-recover', async (req, res) => {
+  const { email, resetToken, recoveryAuthHash, newAuthHash, newSalt, newEncryptedMasterKey, credentials } = req.body;
+
+  if (!email || !resetToken || !recoveryAuthHash || !newAuthHash || !newSalt || !newEncryptedMasterKey || !Array.isArray(credentials)) {
+    return res.status(400).json({ error: 'Invalid input parameters.' });
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+
+  try {
+    // Verify reset token
+    const decoded = jwt.verify(resetToken, JWT_SECRET);
+    if (decoded.email !== normalizedEmail || decoded.purpose !== 'reset-password') {
+      return res.status(400).json({ error: 'Invalid or expired password reset token.' });
+    }
+
+    // Fetch user details
+    const userRes = await db.query('SELECT * FROM users WHERE email = $1', [normalizedEmail]);
+    const user = userRes.rows[0];
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    if (!user.recovery_hash) {
+      return res.status(400).json({ error: 'No recovery key is configured for this account.' });
+    }
+
+    // Verify recovery key hash
+    const isMatch = await bcrypt.compare(recoveryAuthHash, user.recovery_hash);
+    if (!isMatch) {
+      return res.status(400).json({ error: 'Incorrect recovery key.' });
+    }
+
+    // Hash the new authHash
+    const newPasswordHash = await bcrypt.hash(newAuthHash, 10);
+
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // 1. Delete all old credentials
+      await client.query('DELETE FROM credentials WHERE user_id = $1', [user.id]);
+
+      // 2. Insert new re-encrypted credentials
+      const insertText = `
+        INSERT INTO credentials (user_id, site_name, url, username, password, category, notes, last_changed_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `;
+
+      for (const item of credentials) {
+        const siteName = item.site_name || item.siteName;
+        const url = item.url;
+        const username = item.username;
+        const password = item.password;
+        const category = item.category;
+        const notes = item.notes;
+        const lastChangedAt = item.last_changed_at || item.lastChangedAt || new Date().toISOString();
+
+        if (!siteName || !username || !password) {
+          throw new Error('Invalid item. siteName, username, and password are required.');
+        }
+
+        await client.query(insertText, [
+          user.id,
+          siteName,
+          url || '',
+          username,
+          password,
+          category || 'Other',
+          notes || '',
+          lastChangedAt
+        ]);
+      }
+
+      // 3. Update users table with new credentials and new encrypted master key
+      await client.query(
+        'UPDATE users SET password_hash = $1, salt = $2, encrypted_master_key = $3 WHERE id = $4',
+        [newPasswordHash, newSalt, newEncryptedMasterKey, user.id]
+      );
+
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+
+    return res.json({ message: 'Vault recovered and master password reset successfully.' });
+  } catch (error) {
+    console.error('Recovery reset error:', error);
+    return res.status(500).json({ error: 'Internal server error or token expired.' });
+  }
+});
+
+/**
+ * GET /api/auth/recovery-key
+ * Fetches the encrypted_master_key and encrypted credentials for the user during recovery.
+ * Protected by resetToken.
+ */
+router.get('/recovery-key', async (req, res) => {
+  const { email, resetToken } = req.query;
+
+  if (!email || !resetToken) {
+    return res.status(400).json({ error: 'Email and resetToken are required.' });
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+
+  try {
+    // Verify reset token
+    const decoded = jwt.verify(resetToken, JWT_SECRET);
+    if (decoded.email !== normalizedEmail || decoded.purpose !== 'reset-password') {
+      return res.status(400).json({ error: 'Invalid or expired password reset token.' });
+    }
+
+    const userRes = await db.query('SELECT id, encrypted_master_key FROM users WHERE email = $1', [normalizedEmail]);
+    const user = userRes.rows[0];
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    // Fetch user credentials
+    const credentialsRes = await db.query('SELECT * FROM credentials WHERE user_id = $1', [user.id]);
+
+    return res.json({ 
+      encryptedMasterKey: user.encrypted_master_key,
+      credentials: credentialsRes.rows
+    });
+  } catch (error) {
+    console.error('Get recovery key error:', error);
+    return res.status(500).json({ error: 'Internal server error or token expired.' });
   }
 });
 

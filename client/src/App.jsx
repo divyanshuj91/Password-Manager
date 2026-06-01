@@ -14,6 +14,7 @@ import Generator from './pages/Generator.jsx';
 import Audit from './pages/Audit.jsx';
 import Settings from './pages/Settings.jsx';
 import Landing from './pages/Landing.jsx';
+import Recover from './pages/Recover.jsx';
 
 // Components
 import Navbar from './components/Navbar.jsx';
@@ -29,6 +30,7 @@ function AppContent() {
       {/* Public Routes */}
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={!token ? <Login /> : <Navigate to="/dashboard" />} />
+      <Route path="/recover" element={<Recover />} />
 
       {/* Protected Routes Layout */}
       <Route element={<ProtectedRoute />}>

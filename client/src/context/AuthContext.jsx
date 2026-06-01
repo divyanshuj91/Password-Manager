@@ -68,13 +68,44 @@ export function AuthProvider({ children }) {
    */
   const register = async (email, masterPassword) => {
     const salt = generateRandomSalt();
-    const { authHash } = deriveKeyAndHash(masterPassword, salt);
+    const { encryptionKey, authHash } = deriveKeyAndHash(masterPassword, salt);
 
+    // 1. Generate a random 32-character recovery key (formatted as VM-XXXX-XXXX-XXXX-XXXX)
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let recoveryKey = 'VM';
+    for (let i = 0; i < 4; i++) {
+      let segment = '';
+      for (let j = 0; j < 4; j++) {
+        segment += characters.charAt(Math.floor(Math.random() * characters.length));
+      }
+      recoveryKey += '-' + segment;
+    }
+
+    // 2. Derive key from recoveryKey using PBKDF2 (5000 iterations)
+    const CryptoJS = await import('crypto-js');
+    const derivedKey = CryptoJS.default.PBKDF2(recoveryKey, salt, {
+      keySize: 256 / 32,
+      iterations: 5000,
+      hasher: CryptoJS.default.algo.SHA256
+    });
+    const recoveryEncryptionKeyHex = derivedKey.toString(CryptoJS.default.enc.Hex);
+
+    // 3. Derive recoveryAuthHash
+    const recoveryAuthHash = CryptoJS.default.SHA256(recoveryEncryptionKeyHex + recoveryKey).toString(CryptoJS.default.enc.Hex);
+
+    // 4. Encrypt the master encryptionKey using recoveryEncryptionKey
+    const encryptedMasterKey = CryptoJS.default.AES.encrypt(encryptionKey, recoveryEncryptionKeyHex).toString();
+
+    // 5. Register with backend
     await api.post('/auth/register', {
       email,
       authHash,
-      salt
+      salt,
+      recoveryHash: recoveryAuthHash,
+      encryptedMasterKey
     });
+
+    return { recoveryKey };
   };
 
   /**
@@ -218,6 +249,127 @@ export function AuthProvider({ children }) {
     logout();
   };
 
+  /**
+   * Triggers a password reset request.
+   */
+  const requestReset = async (email) => {
+    const res = await api.post('/auth/reset-request', { email });
+    return res.data;
+  };
+
+  /**
+   * Verifies the 6-digit password reset code.
+   */
+  const verifyResetCode = async (email, code) => {
+    const res = await api.post('/auth/reset-verify', { email, code });
+    return res.data.resetToken;
+  };
+
+  /**
+   * Resets the master password and wipes all vault credentials.
+   */
+  const completeDestructiveReset = async (email, resetToken, newMasterPassword) => {
+    const salt = generateRandomSalt();
+    const { authHash } = deriveKeyAndHash(newMasterPassword, salt);
+    const res = await api.post('/auth/reset-complete-destructive', {
+      email,
+      resetToken,
+      newAuthHash: authHash,
+      newSalt: salt
+    });
+    return res.data;
+  };
+
+  /**
+   * Resets the master password and recovers the vault using the Recovery Key.
+   */
+  const completeRecoveryReset = async (email, resetToken, recoveryKey, newMasterPassword) => {
+    // 1. Fetch user salt
+    const saltRes = await api.get(`/auth/salt?email=${encodeURIComponent(email)}`);
+    const { salt } = saltRes.data;
+
+    // 2. Fetch encrypted master key and credentials list
+    const recoveryKeyRes = await api.get(
+      `/auth/recovery-key?email=${encodeURIComponent(email)}&resetToken=${encodeURIComponent(resetToken)}`
+    );
+    const { encryptedMasterKey, credentials } = recoveryKeyRes.data;
+
+    if (!encryptedMasterKey) {
+      throw new Error('This account does not have a recovery key configured.');
+    }
+
+    // 3. Derive recovery encryption key
+    const CryptoJS = await import('crypto-js');
+    const derivedKey = CryptoJS.default.PBKDF2(recoveryKey, salt, {
+      keySize: 256 / 32,
+      iterations: 5000,
+      hasher: CryptoJS.default.algo.SHA256
+    });
+    const recoveryEncryptionKeyHex = derivedKey.toString(CryptoJS.default.enc.Hex);
+
+    // 4. Validate recovery key by checking if we can decrypt the master key
+    let originalEncryptionKey;
+    try {
+      const bytes = CryptoJS.default.AES.decrypt(encryptedMasterKey, recoveryEncryptionKeyHex);
+      originalEncryptionKey = bytes.toString(CryptoJS.default.enc.Utf8);
+      if (!originalEncryptionKey) {
+        throw new Error('Decryption empty');
+      }
+    } catch (e) {
+      throw new Error('Invalid recovery key.');
+    }
+
+    // 5. Decrypt all credentials using the original master key
+    const { decryptData, encryptData } = await import('../utils/encryption.js');
+    const decryptedCredentials = credentials.map(item => {
+      return {
+        siteName: decryptData(item.site_name, originalEncryptionKey),
+        url: decryptData(item.url, originalEncryptionKey),
+        username: decryptData(item.username, originalEncryptionKey),
+        password: decryptData(item.password, originalEncryptionKey),
+        category: decryptData(item.category, originalEncryptionKey),
+        notes: decryptData(item.notes, originalEncryptionKey),
+        last_changed_at: item.last_changed_at || item.created_at
+      };
+    });
+
+    // 6. Derive new keys and authHash from new master password
+    const newSalt = generateRandomSalt();
+    const { authHash: newAuthHash, encryptionKey: newEncryptionKey } = deriveKeyAndHash(newMasterPassword, newSalt);
+
+    // 7. Re-encrypt all credentials using the new master key
+    const reEncryptedCredentials = decryptedCredentials.map(item => {
+      return {
+        siteName: encryptData(item.siteName, newEncryptionKey),
+        url: item.url ? encryptData(item.url, newEncryptionKey) : '',
+        username: encryptData(item.username, newEncryptionKey),
+        password: encryptData(item.password, newEncryptionKey),
+        category: item.category ? encryptData(item.category, newEncryptionKey) : 'Other',
+        notes: item.notes ? encryptData(item.notes, newEncryptionKey) : '',
+        last_changed_at: item.last_changed_at
+      };
+    });
+
+    // 8. Re-encrypt the new master encryption key using recovery key (so recovery continues to work)
+    const newEncryptedMasterKey = CryptoJS.default.AES.encrypt(newEncryptionKey, recoveryEncryptionKeyHex).toString();
+
+    // 9. Derive recoveryAuthHash to send for verification
+    const recoveryAuthHash = CryptoJS.default.SHA256(recoveryEncryptionKeyHex + recoveryKey).toString(CryptoJS.default.enc.Hex);
+
+    // 10. Complete recovery reset on server
+    const res = await api.post('/auth/reset-complete-recover', {
+      email,
+      resetToken,
+      recoveryAuthHash,
+      newAuthHash,
+      newSalt,
+      newEncryptedMasterKey,
+      credentials: reEncryptedCredentials
+    });
+
+    return res.data;
+  };
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -235,7 +387,11 @@ export function AuthProvider({ children }) {
       lock,
       logout,
       changeMasterPassword,
-      deleteAccount
+      deleteAccount,
+      requestReset,
+      verifyResetCode,
+      completeDestructiveReset,
+      completeRecoveryReset
     }}>
       {children}
     </AuthContext.Provider>

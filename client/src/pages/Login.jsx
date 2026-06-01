@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../components/Toast.jsx';
-import { useNavigate } from 'react-router-dom';
-import { Shield, Eye, EyeOff, Fingerprint, Loader2 } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Shield, Eye, EyeOff, Fingerprint, Loader2, Key } from 'lucide-react';
 import StrengthMeter from '../components/StrengthMeter.jsx';
 
 export default function Login() {
@@ -16,6 +16,10 @@ export default function Login() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Recovery Key display state
+  const [generatedRecoveryKey, setGeneratedRecoveryKey] = useState('');
+  const [hasSavedKey, setHasSavedKey] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -44,12 +48,9 @@ export default function Login() {
           setIsLoading(false);
           return;
         }
-        await register(email, password);
-        showToast('Vault created! Logging in...', 'success');
-        
-        // Auto-login after registration
-        await login(email, password);
-        navigate('/dashboard');
+        const { recoveryKey } = await register(email, password);
+        setGeneratedRecoveryKey(recoveryKey);
+        showToast('Vault created! Please save your recovery key.', 'success');
       }
     } catch (error) {
       console.error(error);
@@ -60,12 +61,112 @@ export default function Login() {
     }
   };
 
+  const handleRegisterComplete = async () => {
+    setIsLoading(true);
+    try {
+      await login(email, password);
+      showToast('Logged into your new vault!', 'success');
+      navigate('/dashboard');
+    } catch (error) {
+      console.error(error);
+      showToast('Auto-login failed. Please log in manually.', 'error');
+      setIsLoginMode(true);
+      setGeneratedRecoveryKey('');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const downloadRecoveryKey = () => {
+    const element = document.createElement("a");
+    const file = new Blob([
+      `Vaultme Recovery Key\nEmail: ${email}\nKey: ${generatedRecoveryKey}\n\nWARNING: Keep this key safe. Anyone with access to this key and your email can decrypt and recover your password vault.`
+    ], { type: 'text/plain' });
+    element.href = URL.createObjectURL(file);
+    element.download = `vaultme-recovery-key-${email}.txt`;
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+    showToast('Recovery key downloaded.', 'success');
+  };
+
   const handleBiometric = () => {
     showToast('Biometric unlock initialized. Simulation only.', 'info');
   };
 
+  // If recovery key is generated, show the Save Recovery Key view
+  if (generatedRecoveryKey) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center p-4 bg-black text-[#e5e2e1] font-sans selection:bg-white selection:text-black">
+        <div className="w-full max-w-[440px]">
+          <div className="glass-card-heavy p-10 flex flex-col items-center">
+            
+            <header className="text-center mb-8 w-full">
+              <div className="mb-2 flex justify-center">
+                <div className="w-12 h-12 rounded-lg border border-white/20 flex items-center justify-center bg-[#121212] mb-4">
+                  <Key className="h-6 w-6 text-white" />
+                </div>
+              </div>
+              <h1 className="text-2xl font-medium text-white mb-1">Save Recovery Key</h1>
+              <p className="text-[13px] text-[#737373]">This is the only way to recover your vault if you forget your master password.</p>
+            </header>
+
+            <div className="w-full space-y-6">
+              <div className="space-y-1">
+                <label className="label-caps block">YOUR_RECOVERY_KEY</label>
+                <div className="bg-[#121212] border border-[#444748] p-4 text-center font-mono text-white text-sm font-bold tracking-wider break-all select-all">
+                  {generatedRecoveryKey}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => {
+                     navigator.clipboard.writeText(generatedRecoveryKey);
+                     showToast('Copied to clipboard', 'success');
+                  }}
+                  className="btn-secondary py-3 text-[11px] uppercase tracking-widest cursor-pointer"
+                >
+                  Copy Key
+                </button>
+                <button
+                  onClick={downloadRecoveryKey}
+                  className="btn-secondary py-3 text-[11px] uppercase tracking-widest cursor-pointer"
+                >
+                  Download Key
+                </button>
+              </div>
+
+              <div className="flex items-start gap-3 p-4 border border-[#444748] bg-[#131313]/50 text-xs text-[#8e9192] leading-relaxed">
+                <input
+                  type="checkbox"
+                  id="saved-checkbox"
+                  checked={hasSavedKey}
+                  onChange={(e) => setHasSavedKey(e.target.checked)}
+                  className="mt-0.5 border-[#444748] cursor-pointer"
+                />
+                <label htmlFor="saved-checkbox" className="cursor-pointer select-none">
+                  I have written down or safely downloaded my Recovery Key.
+                </label>
+              </div>
+
+              <button
+                onClick={handleRegisterComplete}
+                disabled={!hasSavedKey || isLoading}
+                className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "I'VE SAVED MY KEY"}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-black">
+    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-black text-[#e5e2e1] font-sans selection:bg-white selection:text-black">
       <div className="w-full max-w-[440px]">
         <div className="glass-card-heavy p-10 flex flex-col items-center">
 
@@ -181,6 +282,18 @@ export default function Login() {
                 'CREATE VAULT'
               )}
             </button>
+
+            {/* Forgot Password Link (Login mode only) */}
+            {isLoginMode && (
+              <div className="text-center pt-2">
+                <Link
+                  to="/recover"
+                  className="text-[#8e9192] hover:text-white text-[11px] uppercase tracking-widest font-semibold transition-colors block cursor-pointer"
+                >
+                  Forgot Master Password?
+                </Link>
+              </div>
+            )}
           </form>
 
           {/* Biometric unlock (Login mode only) */}

@@ -1,12 +1,10 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import { initDatabase } from './models/database.js';
 import authRoutes from './routes/auth.js';
 import passwordRoutes from './routes/passwords.js';
 import auditRoutes from './routes/audit.js';
-
-dotenv.config();
+import { PORT } from './config.js';
 
 // Initialize the database (PostgreSQL if DATABASE_URL is set, otherwise SQLite fallback)
 (async () => {
@@ -19,7 +17,6 @@ dotenv.config();
 })();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
 
 // Enable CORS for local dev server and Vercel production deployment
 const allowedOrigins = [

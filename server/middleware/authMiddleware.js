@@ -1,9 +1,5 @@
 import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_session_key_for_vaultme';
+import { JWT_SECRET } from '../config.js';
 
 export function authMiddleware(req, res, next) {
   const authHeader = req.headers['authorization'];

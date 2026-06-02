@@ -6,7 +6,7 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token') || null);
+  const [token, setToken] = useState(null); // In-memory ONLY
   const [encryptionKey, setEncryptionKey] = useState(null); // In-memory ONLY
   const [salt, setSalt] = useState(null); // In-memory ONLY
   const [isLocked, setIsLocked] = useState(true);
@@ -41,28 +41,24 @@ export function AuthProvider({ children }) {
     localStorage.setItem('autoLockTime', autoLockTime);
   }, [autoLockTime]);
 
-  // Initial user recovery from token
+  // Initial user recovery from cookie on mount
   useEffect(() => {
     async function restoreSession() {
-      if (token) {
-        try {
-          // Verify token works by hitting the health check or fetching user
-          // For simplicity, we decode JWT (or verify it implicitly on first vault fetch)
-          // We can fetch the user details or just trust the JWT payload
-          const base64Url = token.split('.')[1];
-          const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-          const payload = JSON.parse(window.atob(base64));
-          
-          setUser({ id: payload.id, email: payload.email });
-        } catch (error) {
-          console.error('Failed to restore session:', error);
-          logout();
+      try {
+        const response = await api.get('/auth/me');
+        const userData = response.data.user;
+        if (userData) {
+          setUser(userData);
+          setToken('logged_in'); // Dummy token to keep routing checks working
         }
+      } catch (error) {
+        console.log('No active session.');
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     }
     restoreSession();
-  }, [token]);
+  }, []);
 
   /**
    * Registers a user by generating salt, deriving key/hash, and uploading to server
@@ -130,8 +126,7 @@ export function AuthProvider({ children }) {
     const { token: jwtToken, user: userData } = response.data;
     
     // 4. Save credentials
-    localStorage.setItem('token', jwtToken);
-    setToken(jwtToken);
+    setToken(jwtToken || 'logged_in');
     setUser(userData);
     setEncryptionKey(derivedKey);
     setSalt(salt);
@@ -181,13 +176,17 @@ export function AuthProvider({ children }) {
   /**
    * Full logout (wipes token and key)
    */
-  const logout = () => {
-    localStorage.removeItem('token');
+  const logout = async () => {
     setToken(null);
     setUser(null);
     setEncryptionKey(null);
     setSalt(null);
     setIsLocked(true);
+    try {
+      await api.post('/auth/logout');
+    } catch (e) {
+      console.error('Failed to clear session on logout:', e);
+    }
   };
 
   /**

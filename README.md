@@ -87,6 +87,12 @@ Vaultme/
    ```
    *The server starts on `http://localhost:5000` and creates the SQLite database file `vault.db`.*
 
+#### PostgreSQL & TLS Connection Configuration
+If connecting to an external PostgreSQL database (like Neon) using `DATABASE_URL`, TLS certificate validation is strictly enforced by default. You can customize the TLS connection settings in your `.env` file using the following options:
+* `DB_SSL_REJECT_UNAUTHORIZED`: Set to `false` to disable SSL/TLS certificate verification (only recommended for local development or trusted private networks). Defaults to `true`.
+* `PGSSLROOTCERT`: Specify the path to a custom root CA certificate file if needed to verify your database connection.
+
+
 ### 2. Frontend Setup
 1. Open a new terminal and navigate to `/client`:
    ```bash

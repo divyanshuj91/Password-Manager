@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { initDatabase } from './models/database.js';
 import authRoutes from './routes/auth.js';
 import passwordRoutes from './routes/passwords.js';
@@ -37,6 +38,7 @@ app.use(cors({
 }));
 
 app.use(express.json());
+app.use(cookieParser());
 
 // Request logging middleware
 app.use((req, res, next) => {

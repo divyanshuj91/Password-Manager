@@ -161,6 +161,13 @@ router.post('/login', async (req, res) => {
       { expiresIn: '24h' }
     );
 
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
     return res.json({
       token,
       user: {
@@ -172,6 +179,27 @@ router.post('/login', async (req, res) => {
     console.error('Login error:', error);
     return res.status(500).json({ error: 'Internal server error.' });
   }
+});
+
+/**
+ * GET /api/auth/me
+ * Returns current authenticated user
+ */
+router.get('/me', authMiddleware, (req, res) => {
+  return res.json({ user: req.user });
+});
+
+/**
+ * POST /api/auth/logout
+ * Clears authentication token cookie
+ */
+router.post('/logout', (req, res) => {
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+  });
+  return res.json({ message: 'Logged out successfully.' });
 });
 
 /**

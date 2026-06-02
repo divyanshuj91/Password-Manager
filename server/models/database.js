@@ -92,7 +92,7 @@ export async function initDatabase() {
         id SERIAL PRIMARY KEY,
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
-        salt VARCHAR(255) NOT NULL,
+        salt VARCHAR(255),
         recovery_hash VARCHAR(255),
         encrypted_master_key TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -162,7 +162,7 @@ export async function initDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
-        salt TEXT NOT NULL,
+        salt TEXT,
         recovery_hash TEXT,
         encrypted_master_key TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP

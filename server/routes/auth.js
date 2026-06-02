@@ -1,5 +1,6 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
+import argon2 from 'argon2';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import db from '../models/database.js';
@@ -30,16 +31,26 @@ router.get('/salt', async (req, res) => {
   const normalizedEmail = email.toLowerCase().trim();
 
   try {
-    const userRes = await db.query('SELECT salt FROM users WHERE email = $1', [normalizedEmail]);
+    const userRes = await db.query('SELECT password_hash, salt FROM users WHERE email = $1', [normalizedEmail]);
     const user = userRes.rows[0];
     
     if (user) {
-      return res.json({ salt: user.salt, exists: true });
-    } else {
-      // Return deterministic mock salt
-      const mockSalt = getMockSalt(normalizedEmail);
-      return res.json({ salt: mockSalt, exists: false });
+      if (user.password_hash.startsWith("$argon2")) {
+        const parts = user.password_hash.split("$");
+        if (parts.length >= 5) {
+          const saltBase64 = parts[4];
+          const saltHex = Buffer.from(saltBase64, "base64").toString("hex");
+          return res.json({ salt: saltHex, exists: true });
+        }
+      }
+      if (user.salt) {
+        return res.json({ salt: user.salt, exists: true });
+      }
     }
+    
+    // Return deterministic mock salt
+    const mockSalt = getMockSalt(normalizedEmail);
+    return res.json({ salt: mockSalt, exists: false });
   } catch (error) {
     console.error('Error fetching salt:', error);
     return res.status(500).json({ error: 'Internal server error.' });
@@ -67,16 +78,19 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Email is already registered.' });
     }
 
-    // Bcrypt hash the client-side derived authHash
-    const passwordHash = await bcrypt.hash(authHash, 10);
+    // Hash using Argon2id
+    const passwordHash = await argon2.hash(authHash, {
+      type: argon2.argon2id,
+      salt: Buffer.from(salt, 'hex')
+    });
 
-    // Bcrypt hash the recovery hash if provided
-    const hashedRecoveryHash = recoveryHash ? await bcrypt.hash(recoveryHash, 10) : null;
+    // Hash the recovery hash if provided using Argon2id with automatic salt
+    const hashedRecoveryHash = recoveryHash ? await argon2.hash(recoveryHash, { type: argon2.argon2id }) : null;
 
-    // Insert user into DB and return the generated ID
+    // Insert user into DB (setting salt column to null since it's embedded in passwordHash)
     const insertRes = await db.query(
-      'INSERT INTO users (email, password_hash, salt, recovery_hash, encrypted_master_key) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [normalizedEmail, passwordHash, salt, hashedRecoveryHash, encryptedMasterKey || null]
+      'INSERT INTO users (email, password_hash, salt, recovery_hash, encrypted_master_key) VALUES ($1, $2, NULL, $3, $4) RETURNING id',
+      [normalizedEmail, passwordHash, hashedRecoveryHash, encryptedMasterKey || null]
     );
 
     return res.status(201).json({ 
@@ -112,9 +126,32 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Invalid email or master password.' });
     }
 
-    const isMatch = await bcrypt.compare(authHash, user.password_hash);
+    let isMatch = false;
+    let needsUpgrade = false;
+
+    if (user.password_hash.startsWith("$argon2")) {
+      isMatch = await argon2.verify(user.password_hash, authHash);
+    } else {
+      isMatch = await bcrypt.compare(authHash, user.password_hash);
+      needsUpgrade = isMatch;
+    }
+
     if (!isMatch) {
       return res.status(400).json({ error: 'Invalid email or master password.' });
+    }
+
+    // Auto-upgrade legacy users to Argon2id
+    if (needsUpgrade && user.salt) {
+      try {
+        const newPasswordHash = await argon2.hash(authHash, {
+          type: argon2.argon2id,
+          salt: Buffer.from(user.salt, "hex")
+        });
+        await db.query('UPDATE users SET password_hash = $1, salt = NULL WHERE id = $2', [newPasswordHash, user.id]);
+        console.log(`User ${user.email} successfully upgraded to Argon2id.`);
+      } catch (err) {
+        console.error('Failed to auto-upgrade user hash to Argon2id:', err);
+      }
     }
 
     // Generate JWT
@@ -156,17 +193,26 @@ router.post('/change-master-password', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'User not found.' });
     }
 
-    const isMatch = await bcrypt.compare(currentAuthHash, user.password_hash);
+    let isMatch = false;
+    if (user.password_hash.startsWith("$argon2")) {
+      isMatch = await argon2.verify(user.password_hash, currentAuthHash);
+    } else {
+      isMatch = await bcrypt.compare(currentAuthHash, user.password_hash);
+    }
+
     if (!isMatch) {
       return res.status(400).json({ error: 'Incorrect master password.' });
     }
 
-    const newPasswordHash = await bcrypt.hash(newAuthHash, 10);
+    const newPasswordHash = await argon2.hash(newAuthHash, {
+      type: argon2.argon2id,
+      salt: Buffer.from(newSalt, 'hex')
+    });
 
-    // Update user auth hash and salt
+    // Update user auth hash and clear salt column
     await db.query(
-      'UPDATE users SET password_hash = $1, salt = $2 WHERE id = $3', 
-      [newPasswordHash, newSalt, userId]
+      'UPDATE users SET password_hash = $1, salt = NULL WHERE id = $2', 
+      [newPasswordHash, userId]
     );
 
     return res.json({ message: 'Master password updated successfully.' });
@@ -195,7 +241,13 @@ router.delete('/delete-account', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'User not found.' });
     }
 
-    const isMatch = await bcrypt.compare(authHash, user.password_hash);
+    let isMatch = false;
+    if (user.password_hash.startsWith("$argon2")) {
+      isMatch = await argon2.verify(user.password_hash, authHash);
+    } else {
+      isMatch = await bcrypt.compare(authHash, user.password_hash);
+    }
+
     if (!isMatch) {
       return res.status(400).json({ error: 'Incorrect master password.' });
     }
@@ -319,7 +371,10 @@ router.post('/reset-complete-destructive', async (req, res) => {
     }
 
     // Hash the new authHash
-    const newPasswordHash = await bcrypt.hash(newAuthHash, 10);
+    const newPasswordHash = await argon2.hash(newAuthHash, {
+      type: argon2.argon2id,
+      salt: Buffer.from(newSalt, 'hex')
+    });
 
     const userRes = await db.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
     const userId = userRes.rows[0]?.id;
@@ -335,10 +390,10 @@ router.post('/reset-complete-destructive', async (req, res) => {
       // 1. Wipe all existing credentials
       await client.query('DELETE FROM credentials WHERE user_id = $1', [userId]);
 
-      // 2. Update user credentials and remove recovery key references
+      // 2. Update user credentials and remove recovery key references, clear salt column
       await client.query(
-        'UPDATE users SET password_hash = $1, salt = $2, recovery_hash = NULL, encrypted_master_key = NULL WHERE id = $3',
-        [newPasswordHash, newSalt, userId]
+        'UPDATE users SET password_hash = $1, salt = NULL, recovery_hash = NULL, encrypted_master_key = NULL WHERE id = $2',
+        [newPasswordHash, userId]
       );
 
       await client.query('COMMIT');
@@ -388,14 +443,23 @@ router.post('/reset-complete-recover', async (req, res) => {
       return res.status(400).json({ error: 'No recovery key is configured for this account.' });
     }
 
-    // Verify recovery key hash
-    const isMatch = await bcrypt.compare(recoveryAuthHash, user.recovery_hash);
+    // Verify recovery key hash using Argon2id or legacy bcrypt
+    let isMatch = false;
+    if (user.recovery_hash && user.recovery_hash.startsWith("$argon2")) {
+      isMatch = await argon2.verify(user.recovery_hash, recoveryAuthHash);
+    } else if (user.recovery_hash) {
+      isMatch = await bcrypt.compare(recoveryAuthHash, user.recovery_hash);
+    }
+
     if (!isMatch) {
       return res.status(400).json({ error: 'Incorrect recovery key.' });
     }
 
     // Hash the new authHash
-    const newPasswordHash = await bcrypt.hash(newAuthHash, 10);
+    const newPasswordHash = await argon2.hash(newAuthHash, {
+      type: argon2.argon2id,
+      salt: Buffer.from(newSalt, 'hex')
+    });
 
     const client = await db.pool.connect();
     try {
@@ -443,10 +507,10 @@ router.post('/reset-complete-recover', async (req, res) => {
         ]);
       }
 
-      // 3. Update users table with new credentials and new encrypted master key
+      // 3. Update users table with new credentials, new encrypted master key, clear salt column
       await client.query(
-        'UPDATE users SET password_hash = $1, salt = $2, encrypted_master_key = $3 WHERE id = $4',
-        [newPasswordHash, newSalt, newEncryptedMasterKey, user.id]
+        'UPDATE users SET password_hash = $1, salt = NULL, encrypted_master_key = $2 WHERE id = $3',
+        [newPasswordHash, newEncryptedMasterKey, user.id]
       );
 
       await client.query('COMMIT');

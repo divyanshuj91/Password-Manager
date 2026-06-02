@@ -11,9 +11,11 @@ Vaultme is a full-stack, local-first web application designed to store, manage, 
    - Using `crypto-js`, the client runs **PBKDF2 (HMAC-SHA256, 10,000 iterations)** on the master password and salt to derive:
      - An **Encryption Key (256-bit):** Kept strictly in-memory (React context state) and used for AES-256 vault encryption.
      - An **Auth Hash:** Sent to the server as a master password validator.
-2. **Authentication (Bcrypt):**
-   - The server receives the client's `Auth Hash` and hashes it using **bcrypt** before storing it in the SQLite database.
-   - Session states are maintained via secure **JWT (JSON Web Tokens)**.
+2. **Authentication & Session Security (Argon2id & HttpOnly Cookies):**
+   - The server receives the client's `Auth Hash` and hashes it using **Argon2id** (GPU/ASIC-resistant) before storing it in the database.
+   - The KDF salt is embedded directly within the Argon2id hash rather than using a separate column, and is extracted dynamically when requested.
+   - Session states are maintained via **JWT (JSON Web Tokens) stored securely in HttpOnly, Secure, and SameSite cookies** to prevent XSS-based token theft.
+   - A zero-downtime lazy-migration transparently verifies legacy accounts using bcrypt and upgrades them to Argon2id upon their next successful login.
 3. **Zero-Knowledge Vault Storage (AES-256):**
    - Every credential field (site name, username, URL, password, category, notes) is encrypted client-side using **AES-256 (Cipher Block Chaining)** before sending it to the server.
    - Searching, filtering, duplicate audits, and strength scores are computed entirely in the browser memory after vault decryption.
@@ -107,6 +109,16 @@ If connecting to an external PostgreSQL database (like Neon) using `DATABASE_URL
    npm run dev
    ```
    *Open `http://localhost:5173` in your browser.*
+
+### 3. Running Automated Tests
+1. Navigate to `/server`:
+   ```bash
+   cd server
+   ```
+2. Run the native Node.js test runner to verify cryptographic hashing:
+   ```bash
+   npm run test
+   ```
 
 ---
 

@@ -1,5 +1,6 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 import { DATABASE_URL, DB_PATH } from '../config.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -16,11 +17,24 @@ if (connectionString) {
   isPostgres = true;
   console.log('DATABASE_URL environment variable found. Connecting to PostgreSQL...');
   const { default: pg } = await import('pg');
+
+  let ssl = false;
+  if (connectionString && !connectionString.includes('localhost') && !connectionString.includes('127.0.0.1')) {
+    ssl = {
+      rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED === 'false' ? false : true
+    };
+    if (process.env.PGSSLROOTCERT) {
+      try {
+        ssl.ca = fs.readFileSync(process.env.PGSSLROOTCERT).toString();
+      } catch (err) {
+        console.error(`Failed to read PGSSLROOTCERT at ${process.env.PGSSLROOTCERT}:`, err.message);
+      }
+    }
+  }
+
   pool = new pg.Pool({
     connectionString,
-    ssl: connectionString && !connectionString.includes('localhost') && !connectionString.includes('127.0.0.1')
-      ? { rejectUnauthorized: false }
-      : false
+    ssl
   });
 } else {
   isPostgres = false;

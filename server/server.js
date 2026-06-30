@@ -19,7 +19,7 @@ import { PORT } from './config.js';
 
 const app = express();
 
-// Enable CORS for local dev server and Vercel production deployment
+// Enable CORS for local dev server, Vercel production deployment, and browser extensions
 const allowedOrigins = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
@@ -29,7 +29,7 @@ const allowedOrigins = [
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+    if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app') || origin.startsWith('chrome-extension://')) {
       return callback(null, true);
     }
     return callback(new Error('CORS Policy Blocked'), false);

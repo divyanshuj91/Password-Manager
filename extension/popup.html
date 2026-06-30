@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vaultme Password Manager</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- HEADER -->
+    <header class="app-header">
+      <div class="logo-container">
+        <span class="logo-icon">V</span>
+        <h1 class="logo-text">Vaultme</h1>
+      </div>
+      <div class="header-actions">
+        <button id="btn-lock-header" class="icon-btn" title="Lock Vault" style="display: none;">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- LOADING VIEW -->
+    <div id="view-loading" class="view active">
+      <div class="spinner-container">
+        <div class="spinner"></div>
+        <p class="status-text">Synchronizing Vault...</p>
+      </div>
+    </div>
+
+    <!-- LOGIN VIEW -->
+    <div id="view-login" class="view">
+      <h2 class="view-title">Decrypt Vault</h2>
+      <p class="view-subtitle">Access your Zero-Knowledge Vault credentials.</p>
+      <form id="form-login">
+        <div class="input-group">
+          <label for="login-email">Email Address</label>
+          <input type="email" id="login-email" class="obsidian-input" required placeholder="name@example.com">
+        </div>
+        <div class="input-group">
+          <label for="login-password">Master Password</label>
+          <input type="password" id="login-password" class="obsidian-input" required placeholder="••••••••••••••••">
+        </div>
+        <div class="error-message" id="login-error"></div>
+        <button type="submit" class="btn btn-primary">DECRYPT</button>
+      </form>
+    </div>
+
+    <!-- LOCK VIEW -->
+    <div id="view-lock" class="view">
+      <h2 class="view-title">Locked</h2>
+      <p id="lock-user-email" class="view-subtitle">user@example.com</p>
+      <form id="form-unlock">
+        <div class="input-group">
+          <label for="unlock-password">Master Password</label>
+          <input type="password" id="unlock-password" class="obsidian-input" required placeholder="••••••••••••••••" autofocus>
+        </div>
+        <div class="error-message" id="unlock-error"></div>
+        <button type="submit" class="btn btn-primary">UNLOCK</button>
+        <button type="button" id="btn-switch-account" class="btn btn-link">SIGN IN AS DIFFERENT USER</button>
+      </form>
+    </div>
+
+    <!-- MAIN APP VIEW -->
+    <div id="view-main" class="view">
+      
+      <!-- TAB NAVIGATION -->
+      <nav class="tab-navigation">
+        <button class="tab-btn active" data-tab="tab-vault">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+          VAULT
+        </button>
+        <button class="tab-btn" data-tab="tab-add">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          ADD
+        </button>
+        <button class="tab-btn" data-tab="tab-settings">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          SETTINGS
+        </button>
+      </nav>
+
+      <!-- TAB CONTENT PANES -->
+      <div class="tab-content-container">
+        
+        <!-- TAB 1: VAULT -->
+        <div id="tab-vault" class="tab-pane active">
+          <!-- Matching Logins -->
+          <div id="matching-logins-section" class="vault-section" style="display: none;">
+            <h3 class="section-title">ACTIVE SITE LOGINS</h3>
+            <div id="matching-logins-list" class="credentials-list"></div>
+          </div>
+
+          <!-- All Logins -->
+          <div class="vault-section">
+            <div class="search-container">
+              <input type="text" id="vault-search" class="obsidian-input" placeholder="Search logins...">
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" class="search-icon"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            </div>
+            
+            <div id="all-logins-list" class="credentials-list">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: ADD / EDIT CREDENTIAL -->
+        <div id="tab-add" class="tab-pane">
+          <div id="pending-banner" class="info-banner" style="display: none;">
+            Generated password prefilled! Type site name and save.
+          </div>
+          <h3 id="form-credential-title" class="section-title">ADD CREDENTIAL</h3>
+          <form id="form-credential">
+            <input type="hidden" id="cred-id">
+            <div class="input-group">
+              <label for="cred-name">Site Name *</label>
+              <input type="text" id="cred-name" class="obsidian-input" required placeholder="e.g. GitHub">
+            </div>
+            <div class="input-group">
+              <label for="cred-url">Website URL</label>
+              <input type="url" id="cred-url" class="obsidian-input" placeholder="https://github.com">
+            </div>
+            <div class="input-group">
+              <label for="cred-username">Username / Email *</label>
+              <input type="text" id="cred-username" class="obsidian-input" required placeholder="name@example.com">
+            </div>
+            <div class="input-group">
+              <label for="cred-password">Password *</label>
+              <div class="password-input-wrapper">
+                <input type="password" id="cred-password" class="obsidian-input" required placeholder="Password">
+                <button type="button" id="btn-cred-toggle-password" class="icon-btn">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" id="svg-eye-cred"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+              </div>
+            </div>
+            <div class="input-group">
+              <label for="cred-category">Category</label>
+              <select id="cred-category">
+                <option value="Logins">Logins</option>
+                <option value="Finance">Finance</option>
+                <option value="Social">Social</option>
+                <option value="Work">Work</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label for="cred-notes">Notes</label>
+              <textarea id="cred-notes" rows="2" placeholder="Secure notes..."></textarea>
+            </div>
+            <div class="error-message" id="cred-error"></div>
+            <div class="form-actions">
+              <button type="button" id="btn-cred-cancel" class="btn btn-secondary" style="display: none;">CANCEL</button>
+              <button type="submit" id="btn-cred-submit" class="btn btn-primary">SAVE</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- TAB 3: SETTINGS -->
+        <div id="tab-settings" class="tab-pane">
+          <h3 class="section-title">SETTINGS</h3>
+          <div class="settings-list">
+            
+            <div class="setting-item">
+              <div class="setting-info">
+                <h4>Auto-Lock Timeout</h4>
+                <p>Locks the vault after inactivity.</p>
+              </div>
+              <select id="select-auto-lock">
+                <option value="1">1 Minute</option>
+                <option value="5">5 Minutes</option>
+                <option value="15">15 Minutes</option>
+                <option value="60">1 Hour</option>
+              </select>
+            </div>
+
+            <div class="setting-item action-item">
+              <div class="setting-info">
+                <h4>Current Session</h4>
+                <p id="settings-user-email">email@example.com</p>
+              </div>
+              <button id="btn-logout" class="btn btn-secondary btn-danger">SIGN OUT</button>
+            </div>
+
+            <div class="setting-footer">
+              <p>Vaultme Extension v1.0.0</p>
+              <p>Zero-Knowledge / Monochromatic Obsidian Black Edition</p>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+    
+  </div>
+
+  <!-- SCRIPTS -->
+  <script src="lib/crypto-js.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
